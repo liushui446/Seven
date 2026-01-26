@@ -178,7 +178,7 @@ namespace seven {
         }
     };
 
-    void SEVEN_EXPORTS Transformation_Test(Json::Value input);
+    void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);
 
 }
 

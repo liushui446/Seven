@@ -70,6 +70,20 @@ namespace seven
         Deception = 2,           // 欺骗
         Transformation = 3       // 编队
     };
+
+    // 坐标结构体定义
+    struct LLA {
+        double lon_deg;  // 经度(°)
+        double lat_deg;  // 纬度(°)
+        double h_km;     // 高度(km)
+    };
+
+    // ECEF坐标结构体
+    struct ECEF {
+        double X;        // X轴(m)
+        double Y;        // Y轴(m)
+        double Z;        // Z轴(m)
+    };
 }
 
 #endif

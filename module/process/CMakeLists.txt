@@ -38,6 +38,8 @@ target_link_libraries(${PROJECT_NAME}
     PUBLIC
 		sub::core
 		sub::transformation
+		sub::barrage
+		sub::deception
 		#pylon::pylon  # 链接 Basler 库
 		#${OpenCV_LIBS}
 )

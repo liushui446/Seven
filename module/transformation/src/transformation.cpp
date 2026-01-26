@@ -361,7 +361,7 @@ namespace seven {
     }
 
     //Json::Value
-    void Transformation_Test(Json::Value input)
+    void Transformation_Test(Json::Value input, Json::Value& trajectory_result)
     {
         // 1. 初始化参数
         UAVFormationParams params;
@@ -388,7 +388,7 @@ namespace seven {
         trajectory.printSummary(params);
 
         // 5. 示例：获取单个UAV的轨迹
-        int target_uav_id = 0;
+        /*int target_uav_id = 0;
         auto uav0_trajectory = trajectory.getUAVTrajectory(target_uav_id);
         std::cout << "\nFirst 5 frames of UAV " << target_uav_id << ":" << std::endl;
         for (int i = 0; i < std::min(5, static_cast<int>(uav0_trajectory.size())); ++i) {
@@ -397,13 +397,19 @@ namespace seven {
                 << " | Time " << std::fixed << std::setprecision(2) << frame.time << "s"
                 << " | Position (" << std::fixed << std::setprecision(2) << frame.position.x
                 << ", " << std::fixed << std::setprecision(2) << frame.position.y << ")" << std::endl;
-        }
+        }*/
 
-        for (int uav_id = 0; uav_id < params.num_uavs; ++uav_id) {
-            auto uav_data = getUAVTrajectory(uav_id);
-            if (uav_data.empty()) continue;
+        //Json::Value trajectory_result;
 
+        auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
 
-        }
+        if (all_trajectory.empty()) return;
+        for (auto uav_data : all_trajectory)
+        {
+            string uav_id_str = to_string(uav_data.uav_id);
+            string frame_str = to_string(uav_data.frame);
+            trajectory_result[uav_id_str][frame_str]["pos_x"] = uav_data.position.x;
+            trajectory_result[uav_id_str][frame_str]["pos_y"] = uav_data.position.y;
+        } 
     }
 }

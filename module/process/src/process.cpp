@@ -1,5 +1,7 @@
 #include "process/process.hpp"
 #include "transformation/transformation.hpp"
+#include "barrage/barrage.hpp"
+#include "deception/deception.hpp"
 
 #include <thread>
 #include <chrono>
@@ -8,12 +10,13 @@
 #include <cstring>
 #include <stdexcept>
 
+
 using namespace Json;
 
 namespace seven {
 
     // 管道读写缓冲区大小
-    const int BUF_SIZE = 4096;
+    const int BUF_SIZE = 4096 * 1000;
     // JSON 数据分隔符（解决管道粘包，需确保分隔符不在 JSON 内容中）
     const std::string JSON_DELIMITER = "\n###END###\n";
 
@@ -70,21 +73,33 @@ namespace seven {
         return true;
     }
 
-    void parser_cmd(Json::Value param)
+    /**
+     * @brief 从字符串中解析出 命令类型
+     * @param data 读取的 JSON
+     * 压制：1; 欺骗：2 ;编队：3;
+     * @param root 输出的 JSON 根节点
+     */
+    void parser_cmd(Json::Value param, Json::Value& result)
     {
-        Cmd_Type type = static_cast<Cmd_Type>(param["num_uavs"].asInt());
+        Cmd_Type type = static_cast<Cmd_Type>(param["cmd"].asInt());
         if (type == Cmd_Type::Barrage)
         {
-
+            Barrage_Test(param, result);
         }
         else if (type == Cmd_Type::Deception)
         {
-
-
+            Deception_Test(param, result);
         }
         else if (type == Cmd_Type::Transformation)
         {
-
+            Transformation_Test(param, result);
+        }
+        else
+        {
+            Json::Value result;
+            result["status"] = "error";  // 字符串值
+            result["message"] = std::string("处理命令失败：");  // 拼接字符串
+            result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
         }
     }
 
@@ -123,10 +138,8 @@ namespace seven {
                 }
 
                 Json::Value result;
-
-                //json result = calculate(cmd); // 执行计算
-                Transformation_Test(cmd_mes);
-
+                // 执行计算
+                parser_cmd(cmd_mes, result);
                 std::string result_str = jsonToString(result); // 转为 JSON 字符串
 
                 // 将结果写回管道（返回给仿真平台）
@@ -183,8 +196,8 @@ namespace seven {
                 PIPE_READMODE_MESSAGE |
                 PIPE_WAIT,                // 阻塞模式
                 PIPE_UNLIMITED_INSTANCES, // 允许多个客户端连接（按需）
-                4096,                     // 输出缓冲区大小
-                4096,                     // 输入缓冲区大小
+                4096,                  // 输出缓冲区大小
+                4096,                  // 输入缓冲区大小
                 0,                        // 默认超时
                 NULL                      // 安全属性
             );

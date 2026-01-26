@@ -11,6 +11,9 @@ file(GLOB_RECURSE INC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/include/core/*.hpp
 )
 
+set(Eigen3_DIR "${CMAKE_SOURCE_DIR}/3rdparty/Eigen/share/eigen3/cmake")
+find_package(Eigen3 REQUIRED)
+
 # 4. 定义库目标：使用项目名作为目标名，创建别名
 add_library(${PROJECT_NAME} SHARED ${SRC_FILES} ${INC_FILES})
 add_library(sub::core ALIAS ${PROJECT_NAME})
@@ -24,7 +27,7 @@ target_include_directories(${PROJECT_NAME}
 		#${OpenCV_INCLUDE_DIRS}        # OpenCV 头文件（仅内部使用）
 		#${pylon_DIR}
 )
-#message(INC: ${pylon_DIR})
+#message(INC: ${Eigen3::Eigen})
 
 # ===================== 链接 Basler 库和其他依赖 =====================
 #("${CMAKE_SOURCE_DIR}/3rdparty/Basler/lib/x64")
@@ -34,7 +37,6 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
 		sub::core
-		#pylon::pylon  # 链接 Basler 库
-		#${OpenCV_LIBS}
+		Eigen3::Eigen
 		${JSON_LIB}
 )
