@@ -22,7 +22,7 @@ namespace seven {
     ECEF GNSSDeceptionError::lla_to_ecef(const LLA& lla) const {
         double lat_rad = deg2rad(lla.lat_deg);
         double lon_rad = deg2rad(lla.lon_deg);
-        double h_m = lla.h_km * 1000.0;
+        double h_m = lla.h_m * 1000.0;
 
         double e2 = 2 * F_ratio - F_ratio * F_ratio;
         double N = A_length / sqrt(1 - e2 * sin(lat_rad) * sin(lat_rad));
@@ -51,7 +51,7 @@ namespace seven {
         if (p < 1e-12) {
             lla.lon_deg = 0.0;
             lla.lat_deg = rad2deg(M_PI / 2 * (z >= 0 ? 1 : -1));
-            lla.h_km = (fabs(z) - b) / 1000.0;
+            lla.h_m = (fabs(z) - b) / 1000.0;
             return lla;
         }
 
@@ -65,7 +65,7 @@ namespace seven {
 
         lla.lon_deg = rad2deg(lon_rad);
         lla.lat_deg = rad2deg(lat_rad);
-        lla.h_km = h_m / 1000.0;
+        lla.h_m = h_m / 1000.0;
 
         return lla;
     }
@@ -180,7 +180,7 @@ namespace seven {
         }
         double deception_power = deception_power_sum / params.jammer_pos.size();
 
-        if (real_power < 1e-12) return false;
+        //if (real_power < 1e-12) return false;
 
         // 功率比转dB
         double power_ratio_dB = 10 * log10(deception_power / real_power);
@@ -297,7 +297,7 @@ namespace seven {
             LLA pos_error;
             pos_error.lon_deg = new_target_lla.lon_deg - target_pos.lon_deg;
             pos_error.lat_deg = new_target_lla.lat_deg - target_pos.lat_deg;
-            pos_error.h_km = new_target_lla.h_km - target_pos.h_km;
+            pos_error.h_m = new_target_lla.h_m - target_pos.h_m;
 
             return pos_error;
         }
@@ -337,7 +337,7 @@ namespace seven {
         // 5. 计算受干扰后的位置
         result.error_pos.lon_deg = target_pos.lon_deg - result.pos_error.lon_deg;
         result.error_pos.lat_deg = target_pos.lat_deg - result.pos_error.lat_deg;
-        result.error_pos.h_km = target_pos.h_km - result.pos_error.h_km;
+        result.error_pos.h_m = target_pos.h_m - result.pos_error.h_m;
 
         return result;
     }
@@ -360,32 +360,62 @@ namespace seven {
 
         // 2. (可选)自定义参数
         SimParams custom_params;
-        custom_params.deception_pos = { 115.35, 29.18, 0.5 };  // 修改欺骗点
+        custom_params.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
         gnss_error.set_params(custom_params);
 
         // 3. 输入航迹数据
         std::vector<LLA> track_points = {
-            {115.193, 29.027, 0.5},
-            {115.194, 29.028, 0.5},
-            {115.195, 29.029, 0.5}
+            {115.193, 29.027, 1},
         };
+
+        LLA target_velocity = { 0.001, 0.0005, 0 };
+
+        UINT sim_time = 100;  // 仿真时长(s)200
+
+        LLA inital_pos = track_points[0];
+        for (int step = 0; step < sim_time; step++)
+        {
+            LLA target_pos;
+            target_pos = inital_pos + target_velocity * step;
+            track_points.push_back(target_pos);
+        }
 
         // 4. 批量计算
         std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
-        // 5. 输出结果
-        /*for (size_t i = 0; i < results.size(); ++i) {
-            const auto& res = results[i];
-            std::cout << "航迹点 " << i + 1 << ":" << std::endl;
-            std::cout << "  目标位置: 经度=" << res.target_pos.lon_deg
-                << "°, 纬度=" << res.target_pos.lat_deg
-                << "°, 高度=" << res.target_pos.h_km << "km" << std::endl;
-            std::cout << "  欺骗有效: " << (res.deception_valid ? "是" : "否") << std::endl;
-            std::cout << "  定位误差: 经度=" << res.pos_error.lon_deg
-                << "°, 纬度=" << res.pos_error.lat_deg
-                << "°, 高度=" << res.pos_error.h_km << "km" << std::endl;
-            std::cout << "-------------------------" << std::endl;
-        }*/
+        // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
+        trajectory_result.clear(); // 可选，复用对象时建议保留
+        Json::Value& track_points_json = trajectory_result["track_points"]; // 航迹点数组引用，简化书写
+
+        for (size_t i = 0; i < results.size(); ++i) {
+            const auto& res = results[i]; // 复用原代码的常量引用，避免拷贝
+            Json::Value track_point;      // 单个航迹点的JSON对象
+
+            // 基础字段：航迹点序号（和原打印一致，i+1）
+            track_point["index"] = static_cast<int>(i + 1); // size_t转int，适配JsonCpp
+
+            // 目标位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
+            track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // 经度(°)
+            track_point["target_pos"]["lat_deg"] = res.target_pos.lat_deg; // 纬度(°)
+            track_point["target_pos"]["h_m"] = res.target_pos.h_m;         // 高度(m)，原始单位
+
+            // 受干扰位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
+            track_point["error_pos"]["lon_deg"] = res.error_pos.lon_deg; // 经度(°)
+            track_point["error_pos"]["lat_deg"] = res.error_pos.lat_deg; // 纬度(°)
+            track_point["error_pos"]["h_m"] = res.error_pos.h_m;         // 高度(m)，原始单位
+
+            // 欺骗有效标志：布尔值+字符串，兼顾程序解析和人工查看（和原打印一致）
+            track_point["deception_valid_bool"] = res.deception_valid; // 布尔值（推荐，解析友好）
+
+            // 定位误差（经纬度高，°/°/m，同目标位置的单位规范）
+            track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // 经度误差(°)
+            track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // 纬度误差(°)
+            track_point["pos_error"]["h_m"] = res.pos_error.h_m;         // 高度误差(m)，原始单位
+            // 可选：高度误差转千米，新增h_m字段
+
+            // 将当前航迹点加入数组
+            track_points_json.append(track_point);
+        }
 
         return 0;
     }
