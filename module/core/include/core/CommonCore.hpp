@@ -71,11 +71,27 @@ namespace seven
         Transformation = 3       // 编队
     };
 
+    enum class Jammer_Level
+    {
+        Low = 1,                // 弱
+        Middle = 2,             // 中
+        High = 3                // 强
+    };
+
+    enum class Formation_Type
+    {
+        Rectangle = 1,
+        Triangle = 2,
+        Circle = 3,
+        Diamond = 4,
+        Line = 5
+    };
+
     // 坐标结构体定义
     struct LLA {
-        double lon_deg;  // 经度(°)
-        double lat_deg;  // 纬度(°)
-        double h_m;     // 高度(m)
+        double lon_deg = 0.0;  // 经度(°)
+        double lat_deg = 0.0;  // 纬度(°)
+        double h_m = 0.0;     // 高度(km)
 
         // 【加法运算符】LLA + LLA，对应分量逐元素相加
         friend LLA operator+(const LLA& lhs, const LLA& rhs) {
@@ -119,9 +135,48 @@ namespace seven
 
     // ECEF坐标结构体
     struct ECEF {
-        double X;        // X轴(m)
-        double Y;        // Y轴(m)
-        double Z;        // Z轴(m)
+        double X = 0.0;        // X轴(m)
+        double Y = 0.0;        // Y轴(m)
+        double Z = 0.0;        // Z轴(m)
+
+        // 【加法运算符】ECEF + ECEF，对应分量逐元素相加
+        friend ECEF operator+(const ECEF& lhs, const ECEF& rhs) {
+            return { lhs.X + rhs.X,
+                    lhs.Y + rhs.Y,
+                    lhs.Z + rhs.Z };
+        }
+
+        // 【减法运算符】ECEF - ECEF，对应分量逐元素相减
+        friend ECEF operator-(const ECEF& lhs, const ECEF& rhs) {
+            return { lhs.X - rhs.X,
+                    lhs.Y - rhs.Y,
+                    lhs.Z - rhs.Z };
+        }
+
+        // 【点乘运算符】LLA · LLA，返回标量值（分量相乘后求和）
+        // 点乘是向量运算核心，结果为double类型
+        friend ECEF operator*(const ECEF& lhs, const double& other) {
+            double x = lhs.X * other;
+            double y = lhs.Y * other;
+            double z = lhs.Z * other;
+            return { x, y, z };
+        }
+
+        // 拓展：自增/自减运算符（可选，工程中常用，贴合使用习惯）
+        ECEF& operator+=(const ECEF& other) {
+            *this = *this + other;
+            return *this;
+        }
+        ECEF& operator-=(const ECEF& other) {
+            *this = *this - other;
+            return *this;
+        }
+        ECEF& operator=(const ECEF& other) {
+            this->X = other.X;
+            this->Y = other.Y;
+            this->Z = other.Z;
+            return *this;
+        }
     };
 }
 

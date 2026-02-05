@@ -120,11 +120,11 @@ namespace seven {
     /**
          * @brief 生成指定类型的队形位置
          */
-    std::vector<Point2D> UAVFormationTransformer::generateFormation(const std::string& formation_type) {
+    std::vector<Point2D> UAVFormationTransformer::generateFormation(const Formation_Type& formation_type) {
         std::vector<Point2D> positions(params_.num_uavs);
         Point2D center(0, 0);  // 队形中心固定在原点
 
-        if (formation_type == "triangle") {
+        if (formation_type == Formation_Type::Triangle) {
             // 等腰三角形队形（底边严格水平）
             double base_ratio = 1.6;
             double height_ratio = 1;
@@ -174,7 +174,7 @@ namespace seven {
                 }
             }
         }
-        else if (formation_type == "circle") {
+        else if (formation_type == Formation_Type::Circle) {
             // 圆形队形
             for (int i = 0; i < params_.num_uavs; ++i) {
                 double angle = 2 * M_PI * i / params_.num_uavs - M_PI / 6;
@@ -182,7 +182,7 @@ namespace seven {
                 positions[i] = center + Point2D(std::cos(angle) * radius, std::sin(angle) * radius);
             }
         }
-        else if (formation_type == "diamond") {
+        else if (formation_type == Formation_Type::Diamond) {
             // 菱形队形
             double axis_length = params_.interval * (std::ceil(std::sqrt(params_.num_uavs)) / 2);
             std::vector<Point2D> diamond_vertices = {
@@ -225,14 +225,14 @@ namespace seven {
                 }
             }
         }
-        else if (formation_type == "line") {
+        else if (formation_type == Formation_Type::Line) {
             // 直线队形（沿X轴）
             double start_x = -params_.interval * (params_.num_uavs - 1) / 2;
             for (int i = 0; i < params_.num_uavs; ++i) {
                 positions[i] = Point2D(start_x + i * params_.interval, 0);
             }
         }
-        else if (formation_type == "rectangle") {
+        else if (formation_type == Formation_Type::Rectangle) {
             // 矩形队形
             int cols = static_cast<int>(std::ceil(std::sqrt(params_.num_uavs)));
             int rows = static_cast<int>(std::ceil(static_cast<double>(params_.num_uavs) / cols));
@@ -308,10 +308,15 @@ namespace seven {
     */
     UAVFormationTransformer::UAVFormationTransformer(const UAVFormationParams& params) : params_(params) {
         // 初始化位置（默认第一个队形）
-        current_positions_ = generateFormation(params_.formation_sequence[0]);
+        //current_positions_ = generateFormation(params_.formation_sequence[0]);
+        current_positions_ = generateFormation(params_.trans_formation);
         current_positions_ = checkCollision(current_positions_);
         target_positions_ = current_positions_;
         trajectory_.addFormationChangeFrame(0);
+    }
+
+    void UAVFormationTransformer::InitialFormation(const UAVFormationParams& params){
+        current_positions_ = generateFormation(params.trans_formation);
     }
 
     /**
@@ -376,6 +381,8 @@ namespace seven {
         params.collision_radius = input["collision_radius"].asDouble();
         params.switch_interval = input["switch_interval"].asDouble();
         params.max_frames = input["max_frames"].asInt();
+        params.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
+        params.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
         
         // 2. 创建编队变换实例
         UAVFormationTransformer transformer(params);
@@ -388,28 +395,20 @@ namespace seven {
         trajectory.printSummary(params);
 
         // 5. 示例：获取单个UAV的轨迹
-        /*int target_uav_id = 0;
-        auto uav0_trajectory = trajectory.getUAVTrajectory(target_uav_id);
-        std::cout << "\nFirst 5 frames of UAV " << target_uav_id << ":" << std::endl;
-        for (int i = 0; i < std::min(5, static_cast<int>(uav0_trajectory.size())); ++i) {
-            auto& frame = uav0_trajectory[i];
-            std::cout << "Frame " << frame.frame
-                << " | Time " << std::fixed << std::setprecision(2) << frame.time << "s"
-                << " | Position (" << std::fixed << std::setprecision(2) << frame.position.x
-                << ", " << std::fixed << std::setprecision(2) << frame.position.y << ")" << std::endl;
-        }*/
-
-        //Json::Value trajectory_result;
+        Json::Value intial_pos = trajectory_result["intial pos"];
+        //intial_pos = 
 
         auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
 
         if (all_trajectory.empty()) return;
         for (auto uav_data : all_trajectory)
         {
-            string uav_id_str = to_string(uav_data.uav_id);
-            string frame_str = to_string(uav_data.frame);
-            trajectory_result[uav_id_str][frame_str]["pos_x"] = uav_data.position.x;
-            trajectory_result[uav_id_str][frame_str]["pos_y"] = uav_data.position.y;
+            // 外层：帧ID
+            std::string frame_key = "frame_" + std::to_string(uav_data.frame);
+            // 内层：节点ID
+            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
+            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
+            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
         } 
     }
 }

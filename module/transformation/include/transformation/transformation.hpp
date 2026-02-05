@@ -19,6 +19,8 @@ namespace seven {
 
         // 队形序列（默认：矩形→三角形→圆形→菱形→直线）
         std::vector<std::string> formation_sequence = { "rectangle", "triangle", "circle", "diamond", "line" };
+        Formation_Type trans_formation;  // 需要变换的队形
+        Point2D pos_center;              // 队形中心点位置
     };
 
     /**
@@ -123,13 +125,14 @@ namespace seven {
         UAVTrajectory trajectory_;               // 轨迹数据
         std::vector<Point2D> current_positions_; // 当前位置
         std::vector<Point2D> target_positions_;  // 目标位置
-        int current_formation_idx_ = 0;          // 当前队形索引
+        //int current_formation_idx_ = 0;        // 当前队形索引
+        Formation_Type current_formation;        // 当前队形
         int frame_count_ = 0;                    // 当前帧数
 
         /**
          * @brief 生成指定类型的队形位置
          */
-        std::vector<Point2D> generateFormation(const std::string& formation_type);
+        std::vector<Point2D> generateFormation(const Formation_Type& formation_type);
 
         /**
         * @brief 碰撞检测与位置调整
@@ -152,6 +155,9 @@ namespace seven {
          */
         UAVFormationTransformer(const UAVFormationParams& params);
 
+        //初始化队形
+        void InitialFormation(const UAVFormationParams& params);
+
         /**
          * @brief 运行编队变换计算（生成轨迹）
          */
@@ -172,10 +178,6 @@ namespace seven {
          */
         std::vector<Point2D> getCurrentPositions() const;
 
-        void Transformation_Main()
-        {
-            
-        }
     };
 
     void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);

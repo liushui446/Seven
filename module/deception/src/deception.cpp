@@ -355,13 +355,31 @@ namespace seven {
     // 示例使用
     int Deception_Test(Json::Value input, Json::Value& trajectory_result) {
         
+        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+
         // 1. 创建计算实例
         GNSSDeceptionError gnss_error;
 
         // 2. (可选)自定义参数
         SimParams custom_params;
-        custom_params.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
-        gnss_error.set_params(custom_params);
+        //custom_params.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
+        //gnss_error.set_params(custom_params);
+
+        if (jammer_strength == Jammer_Level::High)
+        {
+            custom_params.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
+            gnss_error.set_params(custom_params);
+        }
+        else if (jammer_strength == Jammer_Level::Middle)
+        {
+            custom_params.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
+            gnss_error.set_params(custom_params);
+        }
+        else if (jammer_strength == Jammer_Level::Low)
+        {
+            custom_params.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
+            gnss_error.set_params(custom_params);
+        }
 
         // 3. 输入航迹数据
         std::vector<LLA> track_points = {

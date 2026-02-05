@@ -9,6 +9,11 @@
 namespace seven {
 
     // ========================= 1. 结构体封装参数 =========================
+    /*enum class Jammer_Level {
+        Strong = 1,
+        Middle = 2,
+        Weak
+    };*/
 
     // 干扰源参数结构体
     struct JammerParam {
@@ -41,7 +46,7 @@ namespace seven {
         double Tc = 9.77e-7;       // 伪码码元宽度(s)
         double fs = 10.23e6;      // M码副载频(Hz)
         double d = 1.0 / 8;          // 码跟踪误差系数
-        double beta = 2e6;         // 接收机等效预相关带宽(Hz)
+        double beta = 2e5;         // 接收机等效预相关带宽(Hz)2e6
         double ins_drift = 0.01;   // 惯导漂移率(km/s)
 
         // 跟踪环参数
@@ -59,6 +64,7 @@ namespace seven {
 
         // 干扰源列表
         std::vector<JammerParam> jammers;
+        //Jammer_Level jammer_lev = Jammer_Level::Weak;
 
         // 卫星参数
         SatelliteParam satellite;
@@ -70,8 +76,9 @@ namespace seven {
         double J_S_dB;             // 干信比(dB)
         double sigma_jpll;         // 载波环振荡器颤动(°)
         double sigma_jdll;         // 码环跟踪误差
-        bool unlock_flag;          // 失锁标志（true=失锁）
-        LLA pos_error;             // 定位误差(°/km)
+        bool unlock_flag;          // 失锁标志(true=失锁)
+        LLA pos_error;             // 定位误差(°/m)
+        LLA target_pos;            // 目标位置
         ECEF pos_error_m;          // 定位误差(米)
         double gdop;               // 几何精度因子
     };
@@ -86,17 +93,21 @@ namespace seven {
         const double b = a * (1 - f);  // 短半轴(m)
         const double ep2 = (a * a - b * b) / (b * b); // 第二偏心率平方
 
+    public:
         // 经纬度转ECEF
         ECEF lla_to_ecef(const LLA& lla);
 
         // ECEF转经纬度
         LLA ecef_to_lla(const ECEF& ecef);
 
+    private:
         // 功率谱密度计算
         void calc_power_spectral_density(double f, const SimConfig& config, int jammer_idx, double& GJ, double& GS);
 
         // 数值积分（梯形法近似，替代scipy.integrate.quad）
         double integrate_quad(std::function<double(double)> func, double start, double end, int steps = 1000);
+
+        double integrate_quad2(std::function<double(double)> func, double start, double end, int steps = 1000);
 
         // sinc函数实现
         double sinc(double x);

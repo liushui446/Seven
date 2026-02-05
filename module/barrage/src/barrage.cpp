@@ -14,7 +14,7 @@ namespace seven {
         ECEF ecef;
         double lat_deg_rad = lla.lat_deg * M_PI / 180.0;
         double lon_deg_rad = lla.lon_deg * M_PI / 180.0;
-        double h_m = lla.h_km * 1000.0; // km -> m
+        double h_m = lla.h_m * 1000.0; // km -> m
 
         double N = a / sqrt(1 - e2 * pow(sin(lat_deg_rad), 2));
         ecef.X = (N + h_m) * cos(lat_deg_rad) * cos(lon_deg_rad);
@@ -32,7 +32,7 @@ namespace seven {
         if (p < 1e-12) {
             lla.lon_deg = 0.0;
             lla.lat_deg = (ecef.Z >= 0) ? 90.0 : -90.0;
-            lla.h_km = (fabs(ecef.Z) - b) / 1000.0; // m -> km
+            lla.h_m = (fabs(ecef.Z) - b) / 1000.0; // m -> km
             return lla;
         }
 
@@ -45,7 +45,7 @@ namespace seven {
         double N = a / sqrt(1 - e2 * pow(sin(lat_deg_rad), 2));
         lla.lon_deg = lon_deg_rad * 180.0 / M_PI;
         lla.lat_deg = lat_deg_rad * 180.0 / M_PI;
-        lla.h_km = (p / cos(lat_deg_rad) - N) / 1000.0; // m -> km
+        lla.h_m = (p / cos(lat_deg_rad) - N) / 1000.0; // m -> km
         return lla;
     }
 
@@ -97,7 +97,7 @@ namespace seven {
     }
 
     // 数值积分（梯形法近似，替代scipy.integrate.quad）
-    double GNSSJammerSim::integrate_quad(std::function<double(double)> func, double start, double end, int steps) {
+    double GNSSJammerSim::integrate_quad2(std::function<double(double)> func, double start, double end, int steps) {
         double h_km = (end - start) / steps;
         double sum = 0.5 * (func(start) + func(end));
         for (int i = 1; i < steps; ++i) {
@@ -106,9 +106,39 @@ namespace seven {
         return sum * h_km;
     }
 
+    double GNSSJammerSim::integrate_quad(std::function<double(double)> func, double start, double end, int steps) {
+        // 1. 合法性校验：steps必须是正偶数（辛普森1/3法要求，自动修正或抛异常二选一）
+        if (steps <= 0) {
+            throw std::invalid_argument("steps must be a positive integer!");
+        }
+        // 可选：自动将奇数steps修正为最近的偶数（避免调用方传参错误，推荐加）
+        if (steps % 2 != 0) {
+            steps = std::round(steps / 2.0) * 2;
+            // 也可以抛异常：throw std::invalid_argument("steps must be an even positive integer for Simpson's 1/3 rule!");
+        }
+
+        double h_km = (end - start) / steps;
+        double sum = func(start) + func(end); // 首尾项直接求和（无0.5系数，和梯形法的第一个区别）
+
+        // 2. 循环区分奇数/偶数步：奇数乘4，偶数乘2（和梯形法的第二个区别）
+        for (int i = 1; i < steps; ++i) {
+            double x = start + i * h_km;
+            if (i % 2 == 1) { // 奇数步（1,3,5...）
+                sum += 4 * func(x);
+            }
+            else { // 偶数步（2,4,6...）
+                sum += 2 * func(x);
+            }
+        }
+
+        // 3. 最终结果乘 h/3（梯形法是乘h，和梯形法的第三个区别）
+        return sum * h_km / 3.0;
+    }
+
     // sinc函数实现
     double GNSSJammerSim::sinc(double x) {
-        if (fabs(x) < 1e-12) return 1.0;
+        if (fabs(x) < 1e-12) 
+            return 1.0;
         return sin(x) / x;
     }
 
@@ -124,7 +154,7 @@ namespace seven {
         ); // 总距离(米)
 
         // 垂直/水平距离
-        double dist_vertical = fabs((jammer.pos.h_km - target_pos.h_km) * 1000);
+        double dist_vertical = fabs((jammer.pos.h_m - target_pos.h_m) * 1000);
         double dist_horizontal = sqrt(pow(dist, 2) - pow(dist_vertical, 2));
 
         // 天线仰角(°)
@@ -141,7 +171,7 @@ namespace seven {
             double refraction_factor = 1.0003;
             loss = pow(4 * M_PI * dist * config.fc * refraction_factor / config.c, 2);
         }
-        else if (target_pos.h_km * 1000 < 10000) {
+        else if (target_pos.h_m * 1000 < 10000) {
             // PE模型（抛物方程）
             loss = pow(4 * M_PI * dist * config.fc / config.c, 2) * 1.2;
         }
@@ -154,7 +184,7 @@ namespace seven {
         double jam_power_w = jammer.power;
         // 若输入为dBm，转换为W（可选逻辑）
         if (jam_power_w < 100) {
-            jam_power_w = pow(10, jam_power_w / 10) / 1000;
+            jam_power_w = pow(10, jam_power_w / 10);
         }
         double Pj = jam_power_w * 1.0 / loss; // 天线增益简化为1
 
@@ -326,7 +356,7 @@ namespace seven {
             // 失锁：惯导漂移误差
             pos_error.lon_deg = config.ins_drift / 111;  // 1°≈111km，转换为度
             pos_error.lat_deg = config.ins_drift / 111;
-            pos_error.h_km = 0.1;                       // 高度误差(km)
+            pos_error.h_m = 0.1;                       // 高度误差(km)
 
             pos_error_m.X = config.ins_drift * 1000; // 米
             pos_error_m.Y = config.ins_drift * 1000;
@@ -340,7 +370,7 @@ namespace seven {
             // 转换为经纬高误差（度/km）
             pos_error.lon_deg = error_m / (1000 * 111); // 米→度
             pos_error.lat_deg = error_m / (1000 * 111);
-            pos_error.h_km = error_m / 1000;           // 米→km
+            pos_error.h_m = error_m / 1000;           // 米→km
 
             pos_error_m.X = error_m;
             pos_error_m.Y = error_m;
@@ -371,7 +401,7 @@ namespace seven {
         double sum_sigma_jdll = 0.0;
         int unlock_num = 0;
 
-        for (int i = 0; i < jammer_count; ++i) {
+        for (int i = 0; i < jammer_count; i++) {
             // 1. 计算干扰接收功率
             double Pj = calc_jam_power_apm(config.jammers[i], target_pos, config);
 
@@ -383,17 +413,21 @@ namespace seven {
             double J_S = calc_jammer_to_signal_ratio(Pj, target_pos, config);
             sum_J_S += J_S;
 
-            // 4. 计算跟踪环误差
-            double sigma_jpll, sigma_jdll;
-            calc_tracking_errors(C_NJ, J_S, config, i, sigma_jpll, sigma_jdll);
-            sum_sigma_jpll += sigma_jpll;
-            sum_sigma_jdll += sigma_jdll;
+            if (C_NJ < 80)// 干扰有效（载噪比低于正常阈值） 原来是30
+            {
 
-            // 5. 判定失锁
-            bool pll_unlock = (sigma_jpll > config.pll_unlock_thresh);
-            bool dll_unlock = (sigma_jdll > config.dll_unlock_thresh);
-            if (pll_unlock || dll_unlock) {
-                unlock_num++;
+                // 4. 计算跟踪环误差
+                double sigma_jpll, sigma_jdll;
+                calc_tracking_errors(C_NJ, J_S, config, i, sigma_jpll, sigma_jdll);
+                sum_sigma_jpll += sigma_jpll;
+                sum_sigma_jdll += sigma_jdll;
+
+                // 5. 判定失锁
+                bool pll_unlock = (sigma_jpll > config.pll_unlock_thresh);
+                bool dll_unlock = (sigma_jdll > config.dll_unlock_thresh);
+                if (pll_unlock || dll_unlock) {
+                    unlock_num++;
+                }
             }
         }
 
@@ -428,8 +462,24 @@ namespace seven {
 
     // ========================= 3. 使用示例 =========================
     int Barrage_Test(Json::Value input, Json::Value& trajectory_result) {
+
+        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+
         // 1. 初始化配置
         SimConfig config;
+
+        if (jammer_strength == Jammer_Level::High)
+        {
+            config.beta = 5e4;
+        }
+        else if (jammer_strength == Jammer_Level::Middle)
+        {
+            config.beta = 9e4;
+        }
+        else if (jammer_strength == Jammer_Level::Low)
+        {
+            config.beta = 2e5;
+        }
 
         // 配置卫星参数
         config.satellite.carrier_power = 1e-16;
@@ -442,51 +492,140 @@ namespace seven {
 
         // 配置干扰源
         JammerParam jammer1;
-        jammer1.pos = { 120.25, 28.0, 8.3 };
+        jammer1.pos = {120.0, 27.63, 8.3};
         jammer1.power = 10.0; // W
         jammer1.type = "continuous_wave";
         jammer1.bandwidth = 20e6;
         jammer1.freq = GNSS_FC;
         config.jammers.push_back(jammer1);
 
-        JammerParam jammer2;
+        /*JammerParam jammer2;
         jammer2.pos = { 119.75, 27.64, 8.3 };
         jammer2.power = 10.0;
         jammer2.type = "continuous_wave";
         jammer2.bandwidth = 1e6;
         jammer2.freq = GNSS_FC;
-        config.jammers.push_back(jammer2);
+        config.jammers.push_back(jammer2);*/
 
         // 2. 待处理的航迹数据
         std::vector<LLA> track_points = {
             {119.045, 27.2233, 1.3},   // 航迹点1
-            {119.050, 27.2263, 1.3},   // 航迹点2
-            {119.055, 27.2293, 1.3}    // 航迹点3
         };
+
+        LLA target_velocity = { 0.005, 0.003, 0 };
+
+        UINT sim_time = 400;  // 仿真时长(s)200
+        for (int step = 0; step < sim_time; ++step)
+        {
+            LLA target_pos;
+            target_pos = track_points[0] + target_velocity * step;
+            track_points.push_back(target_pos);
+        }
 
         // 3. 初始化仿真类并计算
         GNSSJammerSim sim;
         std::vector<BarrageTrackResult> results = sim.batch_calc(track_points, config);
 
         // 4. 输出结果
-        /*for (int i = 0; i < results.size(); ++i) {
-            std::cout << "===== 航迹点 " << i + 1 << " 结果 =====" << std::endl;
-            std::cout << "载噪比(dB-Hz): " << results[i].C_NJ_dB << std::endl;
-            std::cout << "干信比(dB): " << results[i].J_S_dB << std::endl;
-            std::cout << "载波环误差(°): " << results[i].sigma_jpll << std::endl;
-            std::cout << "码环误差: " << results[i].sigma_jdll << std::endl;
-            std::cout << "失锁标志: " << (results[i].unlock_flag ? "是" : "否") << std::endl;
-            std::cout << "定位误差(经/纬/高): "
-                << results[i].pos_error.lon_deg << "° / "
-                << results[i].pos_error.lat_deg << "° / "
-                << results[i].pos_error.h_km << "km" << std::endl;
-            std::cout << "定位误差(米, X/Y/Z): "
-                << results[i].pos_error_m.X << "m / "
-                << results[i].pos_error_m.Y << "m / "
-                << results[i].pos_error_m.Z << "m" << std::endl;
-            std::cout << "GDOP: " << results[i].gdop << std::endl;
-            std::cout << std::endl;
-        }*/
+        trajectory_result.clear();
+
+        bool last_unlock_status = false;     //上一次失锁状态
+        bool cur_unlock_status = false;     //当前失锁状态
+        ECEF jammer_centre;
+        ECEF jammer_start;                   //干扰开始点
+        ECEF jammer_end;                     //干扰结束点
+        double r_jammer = 0;                     //干扰半径
+
+        //干扰点信息
+        Json::Value& jammer_list = trajectory_result["jammer_list"];
+        for (int cnt = 0; cnt < config.jammers.size(); cnt++)
+        {
+            Json::Value jammer_mes;
+            jammer_mes["id"] = cnt + 1;
+            jammer_mes["pos_lla"]["lon_deg"] = config.jammers[cnt].pos.lon_deg;
+            jammer_mes["pos_lla"]["lat_deg"] = config.jammers[cnt].pos.lat_deg;
+            jammer_mes["pos_lla"]["h_m"] = config.jammers[cnt].pos.h_m * 1000;      //km->m
+
+            ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
+            jammer_centre.X = tmp_pos.X;
+            jammer_centre.Y = tmp_pos.Y;
+            jammer_centre.Z = tmp_pos.Z;
+
+            jammer_list.append(jammer_mes);
+        }
+
+        Json::Value& track_points_json = trajectory_result["track_points"];
+        // 遍历航迹点结果，写入JSON
+        for (int i = 0; i < results.size(); ++i) {
+            // 定义单个航迹点的JSON对象，存储当前点的所有参数
+            Json::Value track_point;
+
+            // 航迹点序号(和原打印一致，i+1)
+            track_point["step"] = i + 1;
+            //目标点
+            track_point["pos_tar_lla"]["lon_deg"] = track_points[i].lon_deg;
+            track_point["pos_tar_lla"]["lat_deg"] = track_points[i].lat_deg;
+            track_point["pos_tar_lla"]["h_m"] = track_points[i].h_m * 1000;
+            // 载噪比(dB-Hz)
+            track_point["cn0_dbhz"] = results[i].C_NJ_dB;
+            // 干信比(dB)
+            track_point["js_dB"] = results[i].J_S_dB;
+            // 载波环误差(°)
+            track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
+            // 码环误差（保留原变量名，无单位则不标注）
+            track_point["code_loop_error"] = results[i].sigma_jdll;
+            // 失锁标志
+            track_point["unlock_flag_bool"] = results[i].unlock_flag;  // 布尔值
+
+            // 经纬度高定位误差（°/°/m，修正原代码km标注错误，h_m是米，贴合变量定义）
+            track_point["pos_error_lla"]["lon_deg"] = results[i].pos_error.lon_deg;
+            track_point["pos_error_lla"]["lat_deg"] = results[i].pos_error.lat_deg;
+            track_point["pos_error_lla"]["h_m"] = results[i].pos_error.h_m * 1000;
+
+            // X/Y/Z定位误差（米）
+            track_point["pos_error_xyz_m"]["X"] = results[i].pos_error_m.X;
+            track_point["pos_error_xyz_m"]["Y"] = results[i].pos_error_m.Y;
+            track_point["pos_error_xyz_m"]["Z"] = results[i].pos_error_m.Z;
+
+            // GDOP值
+            //track_point["gdop"] = results[i].gdop;
+
+            // 将当前航迹点对象加入数组，trajectory_result最终是JSON数组
+            track_points_json.append(track_point);
+
+            last_unlock_status = cur_unlock_status;
+            cur_unlock_status = results[i].unlock_flag;
+            if (!last_unlock_status || cur_unlock_status)
+            {
+                ECEF tmp_pos = sim.lla_to_ecef(track_points[i]);
+                jammer_start.X = tmp_pos.X;
+                jammer_start.Y = tmp_pos.Y;
+                jammer_start.Z = tmp_pos.Z;
+            }
+            else if (last_unlock_status || !cur_unlock_status)
+            {
+                if (i > 0)
+                {
+                    ECEF tmp_pos = sim.lla_to_ecef(track_points[i - 1]);
+                    jammer_end.X = tmp_pos.X;
+                    jammer_end.Y = tmp_pos.Y;
+                    jammer_end.Z = tmp_pos.Z;
+
+                    double r_1 = sqrt(pow((jammer_centre.X - jammer_start.X), 2) + pow((jammer_centre.Y - jammer_start.Y), 2) + pow((jammer_centre.Z - jammer_start.Z), 2));
+                    double r_2 = sqrt(pow((jammer_centre.X - jammer_end.X), 2) + pow((jammer_centre.Y - jammer_end.Y), 2) + pow((jammer_centre.Z - jammer_end.Z), 2));
+                    r_jammer = (r_1 + r_2) / 2;
+                }
+            }
+        }
+
+        //干扰范围
+        Json::Value& jammer_area_json = trajectory_result["jammer area"];
+        LLA jammer_pos_centra = sim.ecef_to_lla(jammer_centre);
+        jammer_pos_centra.h_m = jammer_pos_centra.h_m * 1000;
+        jammer_area_json["jammer pos centra"]["lon_deg"] = jammer_pos_centra.lon_deg;
+        jammer_area_json["jammer pos centra"]["lat_deg"] = jammer_pos_centra.lat_deg;
+        jammer_area_json["jammer pos centra"]["h_m"] = jammer_pos_centra.h_m;
+        jammer_area_json["jammer r"] = r_jammer; //m
 
         return 0;
     }
