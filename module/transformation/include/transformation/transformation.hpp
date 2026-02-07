@@ -5,23 +5,7 @@
 
 namespace seven {
 
-    /**
-    * @brief 初始化参数结构体
-    */
-    struct UAVFormationParams {
-        int num_uavs = 8;                // 节点数量
-        double interval = 5.0;           // 队形节点间间隔（米）
-        double collision_radius = 2.0;   // 避碰半径（米）
-        double switch_interval = 5.0;    // 队形切换间隔（秒）
-        double transition_alpha = 0.05;  // 位置过渡系数（越小越平滑）
-        int fps = 30;                    // 帧率（用于时间换算）
-        int max_frames = 1500;           // 最大运行帧数
-
-        // 队形序列（默认：矩形→三角形→圆形→菱形→直线）
-        std::vector<std::string> formation_sequence = { "rectangle", "triangle", "circle", "diamond", "line" };
-        Formation_Type trans_formation;  // 需要变换的队形
-        Point2D pos_center;              // 队形中心点位置
-    };
+    string formationToStr(Formation_Type type);
 
     /**
      * @brief 二维坐标结构体
@@ -50,6 +34,15 @@ namespace seven {
             return { x / scalar, y / scalar };
         }
 
+        Point2D& operator=(const Point2D& other) {
+            if (this == &other) {  // 处理自赋值
+                return *this;
+            }
+            x = other.x;
+            y = other.y;
+            return *this;
+        }
+
         // 向量长度
         double norm() const {
             return std::sqrt(x * x + y * y);
@@ -63,13 +56,60 @@ namespace seven {
     };
 
     /**
+    * @brief 初始化参数结构体
+    */
+    struct UAVFormationParams {
+        int num_uavs = 8;                // 节点数量
+        double interval = 5.0;           // 队形节点间间隔（米）
+        double collision_radius = 2.0;   // 避碰半径（米）
+        //double switch_interval = 5.0;    // 队形切换间隔（秒）
+        double transition_alpha = 0.05;  // 位置过渡系数（越小越平滑）
+        int fps = 30;                    // 帧率（用于时间换算）
+        int max_frames = 1500;           // 最大运行帧数
+        bool isInitial = false;          // 是否进行编队初始化
+
+        // 队形序列（默认：矩形→三角形→圆形→菱形→直线）
+        //std::vector<std::string> formation_sequence = { "rectangle", "triangle", "circle", "diamond", "line" };
+        Formation_Type trans_formation;  // 需要变换的队形
+        Formation_Type current_formation;// 当前队形
+        Point2D pos_center;              // 队形中心点位置
+
+
+        UAVFormationParams& operator=(const UAVFormationParams& other) {
+            if (this == &other) {
+                return *this;
+            }
+
+            num_uavs = other.num_uavs;
+            interval = other.interval;
+            collision_radius = other.collision_radius;
+            //switch_interval = other.switch_interval;
+            transition_alpha = other.transition_alpha;
+            fps = other.fps;
+            max_frames = other.max_frames;
+            isInitial = other.isInitial;
+
+            trans_formation = other.trans_formation;
+            current_formation = other.current_formation;
+            pos_center = other.pos_center;
+
+            return *this;
+        }
+
+        //UAVFormationParams(const UAVFormationParams& other) {
+        //    *this = other;  // 复用operator=，避免代码冗余
+        //}
+    };
+    
+
+    /**
      * @brief 单帧轨迹数据结构体
      */
     struct TrajectoryFrame {
         int frame = 0;          // 帧数
         double time = 0.0;      // 时间（秒）
         int uav_id = 0;         // 节点ID
-        std::string formation;  // 当前队形
+        Formation_Type formation;  // 当前队形
         Point2D position;       // 位置坐标
     };
 
@@ -85,7 +125,7 @@ namespace seven {
         /**
          * @brief 添加单帧轨迹数据
          */
-        void addFrame(int frame, double time, int uav_id, const std::string& formation, const Point2D& pos);
+        void addFrame(int frame, double time, int uav_id, const Formation_Type formation, const Point2D& pos);
 
         /**
          * @brief 记录队形变换帧数
@@ -108,12 +148,6 @@ namespace seven {
          * @brief 获取队形变换帧数记录
          */
         const std::vector<int>& getFormationChangeFrames() const;
-
-        /**
-         * @brief 打印轨迹摘要信息
-         * @param params 初始化参数
-         */
-        void printSummary(const UAVFormationParams& params) const;
     };
 
     /**
@@ -140,23 +174,23 @@ namespace seven {
         std::vector<Point2D> checkCollision(const std::vector<Point2D>& positions);
 
         /**
-        * @brief 切换到下一个队形
-        */
-        void switchFormation();
-
-        /**
          * @brief 更新无人机位置（平滑过渡）
          */
-        void updatePositions();
+        bool updatePositions();
 
     public:
         /**
          * @brief 构造函数（初始化参数）
          */
-        UAVFormationTransformer(const UAVFormationParams& params);
+        UAVFormationTransformer();
 
         //初始化队形
-        void InitialFormation(const UAVFormationParams& params);
+        void InitialFormation();
+
+        /**
+        * @brief 切换到下一个队形
+        */
+        void switchFormation();
 
         /**
          * @brief 运行编队变换计算（生成轨迹）
@@ -171,17 +205,23 @@ namespace seven {
         /**
          * @brief 获取当前队形名称
          */
-        std::string getCurrentFormation() const;
+        Formation_Type getCurrentFormation() const;
 
         /**
          * @brief 获取当前所有无人机位置
          */
         std::vector<Point2D> getCurrentPositions() const;
 
+        /**
+         * @brief 队形类型转string
+         */
+        //string formationToStr(Formation_Type type) const;
+
     };
 
     void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);
 
+    static UAVFormationParams formation_param_;
 }
 
 #endif
