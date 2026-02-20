@@ -140,6 +140,224 @@ namespace seven {
 
     int SEVEN_EXPORTS Barrage_Test(Json::Value input, Json::Value& trajectory_result);
 
+    // 核心仿真管理器类
+    class BarrageSimManager {
+    public:
+        enum class SimState {
+            STOPPED = 0,  // 仿真已停止
+            RUNNING = 1   // 仿真运行中
+        };
+
+        BarrageSimManager() : sim_state_(SimState::STOPPED), sim_time_(400) {}
+
+        // 1. 仿真开始接口
+        int sim_start(const Json::Value& input, Json::Value& result) {
+            std::lock_guard<std::mutex> lock(sim_mutex_);
+
+            // 检查当前状态
+            if (sim_state_ == SimState::RUNNING) {
+                result["status"] = "error";
+                result["message"] = "仿真已在运行中，无法重复开始";
+                return -1;
+            }
+
+            try {
+                // 解析输入参数
+                Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+                int jammer_num = input.get("jammer_num", 1).asInt();
+
+                // 初始化配置
+                init_sim_config(jammer_strength, jammer_num);
+
+                // 构造返回结果（干扰源位置JSON）
+                result.clear();
+                result["status"] = "success";
+                result["message"] = "仿真启动成功";
+
+                Json::Value& jammer_list = result["jammer_list"];
+                for (int cnt = 0; cnt < config_.jammers.size(); cnt++) {
+                    Json::Value jammer_mes;
+                    jammer_mes["id"] = cnt + 1;
+                    jammer_mes["pos_lla"]["lon_deg"] = config_.jammers[cnt].pos.lon_deg;
+                    jammer_mes["pos_lla"]["lat_deg"] = config_.jammers[cnt].pos.lat_deg;
+                    jammer_mes["pos_lla"]["h_m"] = config_.jammers[cnt].pos.h_m;
+                    jammer_list.append(jammer_mes);
+                }
+
+                // 更新仿真状态
+                sim_state_ = SimState::RUNNING;
+            }
+            catch (const std::exception& e) {
+                result["status"] = "error";
+                result["message"] = std::string("仿真启动失败: ") + e.what();
+                return -1;
+            }
+
+            return 0;
+        }
+
+        // 2. 多平台航迹计算接口
+        int sim_calc(const Json::Value& input, Json::Value& result) {
+            std::lock_guard<std::mutex> lock(sim_mutex_);
+
+            // 检查仿真状态
+            if (sim_state_ != SimState::RUNNING) {
+                result["status"] = "error";
+                result["message"] = "仿真已结束，请重新开始";
+                return -1;
+            }
+
+            try {
+                result.clear();
+                result["status"] = "success";
+
+                // 解析多平台航迹数据
+                const Json::Value& platform_tracks = input["platform_tracks"];
+                Json::Value& platform_results = result["platform_results"];
+
+                GNSSJammerSim sim;
+
+                // 遍历每个平台的航迹
+                for (int i = 0; i < platform_tracks.size(); i++) {
+                    UINT platform_id = platform_tracks[i]["platform_id"].asUInt();
+                    const Json::Value& track_points_json = platform_tracks[i]["track_points"];
+
+                    // 转换JSON航迹点到内部格式
+                    std::vector<LLA> track_points;
+                    for (int j = 0; j < track_points_json.size(); j++) {
+                        LLA point;
+                        point.lon_deg = track_points_json[j]["lon_deg"].asDouble();
+                        point.lat_deg = track_points_json[j]["lat_deg"].asDouble();
+                        point.h_m = track_points_json[j]["h_m"].asDouble() / 1000.0; // 米转千米
+                        track_points.push_back(point);
+                    }
+
+                    // 如果只有初始点，生成仿真轨迹
+                    if (track_points.size() == 1) {
+                        LLA target_velocity = { 0.005, 0.003, 0 };
+                        for (int step = 0; step < sim_time_; ++step) {
+                            LLA target_pos = track_points[0] + target_velocity * step;
+                            track_points.push_back(target_pos);
+                        }
+                    }
+
+                    // 执行仿真计算
+                    std::vector<BarrageTrackResult> calc_results = sim.batch_calc(track_points, config_);
+
+                    // 构造该平台的结果
+                    Json::Value platform_result;
+                    platform_result["platform_id"] = platform_id;
+
+                    Json::Value& track_results = platform_result["track_results"];
+                    for (int j = 0; j < calc_results.size(); j++) {
+                        Json::Value track_point;
+                        track_point["step"] = j + 1;
+                        track_point["pos_tar_lla"]["lon_deg"] = track_points[j].lon_deg;
+                        track_point["pos_tar_lla"]["lat_deg"] = track_points[j].lat_deg;
+                        track_point["pos_tar_lla"]["h_m"] = track_points[j].h_m * 1000;
+                        track_point["cn0_dbhz"] = calc_results[j].C_NJ_dB;
+                        track_point["js_dB"] = calc_results[j].J_S_dB;
+                        track_point["carrier_loop_error_deg"] = calc_results[j].sigma_jpll;
+                        track_point["code_loop_error"] = calc_results[j].sigma_jdll;
+                        track_point["unlock_flag_bool"] = calc_results[j].unlock_flag;
+                        track_point["pos_error_lla"]["lon_deg"] = calc_results[j].pos_error.lon_deg;
+                        track_point["pos_error_lla"]["lat_deg"] = calc_results[j].pos_error.lat_deg;
+                        track_point["pos_error_lla"]["h_m"] = calc_results[j].pos_error.h_m * 1000;
+                        track_point["pos_error_xyz_m"]["X"] = calc_results[j].pos_error_m.X;
+                        track_point["pos_error_xyz_m"]["Y"] = calc_results[j].pos_error_m.Y;
+                        track_point["pos_error_xyz_m"]["Z"] = calc_results[j].pos_error_m.Z;
+
+                        track_results.append(track_point);
+                    }
+
+                    platform_results.append(platform_result);
+                }
+
+                // 添加干扰源信息到结果
+                Json::Value& jammer_list = result["jammer_list"];
+                for (int cnt = 0; cnt < config_.jammers.size(); cnt++) {
+                    Json::Value jammer_mes;
+                    jammer_mes["id"] = cnt + 1;
+                    jammer_mes["pos_lla"]["lon_deg"] = config_.jammers[cnt].pos.lon_deg;
+                    jammer_mes["pos_lla"]["lat_deg"] = config_.jammers[cnt].pos.lat_deg;
+                    jammer_mes["pos_lla"]["h_m"] = config_.jammers[cnt].pos.h_m * 1000;
+                    jammer_list.append(jammer_mes);
+                }
+            }
+            catch (const std::exception& e) {
+                result["status"] = "error";
+                result["message"] = std::string("计算失败: ") + e.what();
+                return -1;
+            }
+
+            return 0;
+        }
+
+        // 3. 仿真结束接口
+        int sim_stop(Json::Value& result) {
+            std::lock_guard<std::mutex> lock(sim_mutex_);
+
+            result.clear();
+
+            if (sim_state_ != SimState::RUNNING) {
+                result["status"] = "warning";
+                result["message"] = "仿真未运行，无需结束";
+                return 0;
+            }
+
+            // 重置状态和配置
+            sim_state_ = SimState::STOPPED;
+            config_ = SimConfig();
+
+            result["status"] = "success";
+            result["message"] = "仿真已成功结束";
+
+            return 0;
+        }
+
+    private:
+        // 初始化仿真配置
+        void init_sim_config(Jammer_Level jammer_strength, int jammer_num) {
+            // 设置beta参数
+            if (jammer_strength == Jammer_Level::High) {
+                config_.beta = 5e4;
+            }
+            else if (jammer_strength == Jammer_Level::Middle) {
+                config_.beta = 9e4;
+            }
+            else if (jammer_strength == Jammer_Level::Low) {
+                config_.beta = 2e5;
+            }
+
+            // 添加干扰源
+            config_.jammers.clear();
+            for (int i = 0; i < jammer_num; i++) {
+                JammerParam jammer;
+                // 为不同干扰源生成不同位置（基础位置 + 偏移）
+                jammer.pos = { 120.0 + i * 0.1, 27.63 + i * 0.05, 8.3 };
+                jammer.power = 10.0;
+                jammer.type = "continuous_wave";
+                jammer.bandwidth = 20e6;
+                jammer.freq = GNSS_FC;
+                config_.jammers.push_back(jammer);
+            }
+
+            // 配置卫星参数
+            config_.satellite.carrier_power = 1e-16;
+            config_.satellite.sat_pos = {
+                {125.0, 30.0, 5000},
+                {115.0, 35.0, 5000},
+                {130.0, 25.0, 5000},
+                {110.0, 28.0, 5000}
+            };
+        }
+
+        SimState sim_state_;          // 仿真状态
+        SimConfig config_;            // 仿真配置
+        UINT sim_time_;               // 仿真时长
+        std::mutex sim_mutex_;        // 线程安全锁
+    };
+
 }
 
 #endif

@@ -1,15 +1,15 @@
-#include "barrage/barrage.hpp"
+ï»¿#include "barrage/barrage.hpp"
 
 #include <cmath>
-#include <Eigen/Dense>  // ĞèEigen¿â´¦Àí¾ØÕóÔËËã£¨GDOP¼ÆËã£©
-#include <numeric>      // ÊıÖµ¼ÆËã
+#include <Eigen/Dense>  // éœ€Eigenåº“å¤„ç†çŸ©é˜µè¿ç®—ï¼ˆGDOPè®¡ç®—ï¼‰
+#include <numeric>      // æ•°å€¼è®¡ç®—
 
 
 
 namespace seven {
 
-    // ========================= 2. ºËĞÄËã·¨Àà·â×° =========================
-    // ¾­Î³¶È×ªECEF
+    // ========================= 2. æ ¸å¿ƒç®—æ³•ç±»å°è£… =========================
+    // ç»çº¬åº¦è½¬ECEF
     ECEF GNSSJammerSim::lla_to_ecef(const LLA& lla) {
         ECEF ecef;
         double lat_deg_rad = lla.lat_deg * M_PI / 180.0;
@@ -23,12 +23,12 @@ namespace seven {
         return ecef;
     }
 
-    // ECEF×ª¾­Î³¶È
+    // ECEFè½¬ç»çº¬åº¦
     LLA GNSSJammerSim::ecef_to_lla(const ECEF& ecef) {
         LLA lla;
         double p = sqrt(ecef.X * ecef.X + ecef.Y * ecef.Y);
 
-        // ´¦Àí¼«ÇøÇé¿ö
+        // å¤„ç†æåŒºæƒ…å†µ
         if (p < 1e-12) {
             lla.lon_deg = 0.0;
             lla.lat_deg = (ecef.Z >= 0) ? 90.0 : -90.0;
@@ -49,9 +49,9 @@ namespace seven {
         return lla;
     }
 
-    // ¹¦ÂÊÆ×ÃÜ¶È¼ÆËã
+    // åŠŸç‡è°±å¯†åº¦è®¡ç®—
     void GNSSJammerSim::calc_power_spectral_density(double f, const SimConfig& config, int jammer_idx, double& GJ, double& GS) {
-        // ÎÀĞÇĞÅºÅ¹¦ÂÊÆ×ÃÜ¶ÈGS(f)
+        // å«æ˜Ÿä¿¡å·åŠŸç‡è°±å¯†åº¦GS(f)
         if (config.pseudocode == "C/A" || config.pseudocode == "P(Y)") {
             GS = config.Tc * pow(sinc(M_PI * f * config.Tc), 2);
         }
@@ -62,7 +62,7 @@ namespace seven {
             GS = 0.0;
         }
 
-        // ¸ÉÈÅĞÅºÅ¹¦ÂÊÆ×ÃÜ¶ÈGJ(f)
+        // å¹²æ‰°ä¿¡å·åŠŸç‡è°±å¯†åº¦GJ(f)
         const JammerParam& jammer = config.jammers[jammer_idx];
         double jam_freq = jammer.freq;
         GJ = 0.0;
@@ -71,7 +71,7 @@ namespace seven {
             GJ = 1.0;
         }
         else if (jammer.type == "multi-tone") {
-            // ¶àÒô¸ÉÈÅ¼ò»¯´¦Àí£ºÆ¥ÅäÖĞĞÄÆµÂÊ¡À1e3Hz
+            // å¤šéŸ³å¹²æ‰°ç®€åŒ–å¤„ç†ï¼šåŒ¹é…ä¸­å¿ƒé¢‘ç‡Â±1e3Hz
             if (fabs(f - jam_freq) < 1e3) {
                 GJ = 1.0;
             }
@@ -96,7 +96,7 @@ namespace seven {
         }
     }
 
-    // ÊıÖµ»ı·Ö£¨ÌİĞÎ·¨½üËÆ£¬Ìæ´úscipy.integrate.quad£©
+    // æ•°å€¼ç§¯åˆ†ï¼ˆæ¢¯å½¢æ³•è¿‘ä¼¼ï¼Œæ›¿ä»£scipy.integrate.quadï¼‰
     double GNSSJammerSim::integrate_quad2(std::function<double(double)> func, double start, double end, int steps) {
         double h_km = (end - start) / steps;
         double sum = 0.5 * (func(start) + func(end));
@@ -107,93 +107,93 @@ namespace seven {
     }
 
     double GNSSJammerSim::integrate_quad(std::function<double(double)> func, double start, double end, int steps) {
-        // 1. ºÏ·¨ĞÔĞ£Ñé£ºsteps±ØĞëÊÇÕıÅ¼Êı£¨ĞÁÆÕÉ­1/3·¨ÒªÇó£¬×Ô¶¯ĞŞÕı»òÅ×Òì³£¶şÑ¡Ò»£©
+        // 1. åˆæ³•æ€§æ ¡éªŒï¼šstepså¿…é¡»æ˜¯æ­£å¶æ•°ï¼ˆè¾›æ™®æ£®1/3æ³•è¦æ±‚ï¼Œè‡ªåŠ¨ä¿®æ­£æˆ–æŠ›å¼‚å¸¸äºŒé€‰ä¸€ï¼‰
         if (steps <= 0) {
             throw std::invalid_argument("steps must be a positive integer!");
         }
-        // ¿ÉÑ¡£º×Ô¶¯½«ÆæÊıstepsĞŞÕıÎª×î½üµÄÅ¼Êı£¨±ÜÃâµ÷ÓÃ·½´«²Î´íÎó£¬ÍÆ¼ö¼Ó£©
+        // å¯é€‰ï¼šè‡ªåŠ¨å°†å¥‡æ•°stepsä¿®æ­£ä¸ºæœ€è¿‘çš„å¶æ•°ï¼ˆé¿å…è°ƒç”¨æ–¹ä¼ å‚é”™è¯¯ï¼Œæ¨èåŠ ï¼‰
         if (steps % 2 != 0) {
             steps = std::round(steps / 2.0) * 2;
-            // Ò²¿ÉÒÔÅ×Òì³££ºthrow std::invalid_argument("steps must be an even positive integer for Simpson's 1/3 rule!");
+            // ä¹Ÿå¯ä»¥æŠ›å¼‚å¸¸ï¼šthrow std::invalid_argument("steps must be an even positive integer for Simpson's 1/3 rule!");
         }
 
         double h_km = (end - start) / steps;
-        double sum = func(start) + func(end); // Ê×Î²ÏîÖ±½ÓÇóºÍ£¨ÎŞ0.5ÏµÊı£¬ºÍÌİĞÎ·¨µÄµÚÒ»¸öÇø±ğ£©
+        double sum = func(start) + func(end); // é¦–å°¾é¡¹ç›´æ¥æ±‚å’Œï¼ˆæ— 0.5ç³»æ•°ï¼Œå’Œæ¢¯å½¢æ³•çš„ç¬¬ä¸€ä¸ªåŒºåˆ«ï¼‰
 
-        // 2. Ñ­»·Çø·ÖÆæÊı/Å¼Êı²½£ºÆæÊı³Ë4£¬Å¼Êı³Ë2£¨ºÍÌİĞÎ·¨µÄµÚ¶ş¸öÇø±ğ£©
+        // 2. å¾ªç¯åŒºåˆ†å¥‡æ•°/å¶æ•°æ­¥ï¼šå¥‡æ•°ä¹˜4ï¼Œå¶æ•°ä¹˜2ï¼ˆå’Œæ¢¯å½¢æ³•çš„ç¬¬äºŒä¸ªåŒºåˆ«ï¼‰
         for (int i = 1; i < steps; ++i) {
             double x = start + i * h_km;
-            if (i % 2 == 1) { // ÆæÊı²½£¨1,3,5...£©
+            if (i % 2 == 1) { // å¥‡æ•°æ­¥ï¼ˆ1,3,5...ï¼‰
                 sum += 4 * func(x);
             }
-            else { // Å¼Êı²½£¨2,4,6...£©
+            else { // å¶æ•°æ­¥ï¼ˆ2,4,6...ï¼‰
                 sum += 2 * func(x);
             }
         }
 
-        // 3. ×îÖÕ½á¹û³Ë h/3£¨ÌİĞÎ·¨ÊÇ³Ëh£¬ºÍÌİĞÎ·¨µÄµÚÈı¸öÇø±ğ£©
+        // 3. æœ€ç»ˆç»“æœä¹˜ h/3ï¼ˆæ¢¯å½¢æ³•æ˜¯ä¹˜hï¼Œå’Œæ¢¯å½¢æ³•çš„ç¬¬ä¸‰ä¸ªåŒºåˆ«ï¼‰
         return sum * h_km / 3.0;
     }
 
-    // sincº¯ÊıÊµÏÖ
+    // sincå‡½æ•°å®ç°
     double GNSSJammerSim::sinc(double x) {
         if (fabs(x) < 1e-12) 
             return 1.0;
         return sin(x) / x;
     }
 
-    // APMµç´Å´«²¥Ä£ĞÍ¼ÆËã¸ÉÈÅ½ÓÊÕ¹¦ÂÊ
+    // APMç”µç£ä¼ æ’­æ¨¡å‹è®¡ç®—å¹²æ‰°æ¥æ”¶åŠŸç‡
     double GNSSJammerSim::calc_jam_power_apm(const JammerParam& jammer, const LLA& target_pos, const SimConfig& config) {
-        // ×ª»»ÎªECEF¼ÆËã¾àÀë
+        // è½¬æ¢ä¸ºECEFè®¡ç®—è·ç¦»
         ECEF jam_ecef = lla_to_ecef(jammer.pos);
         ECEF target_ecef = lla_to_ecef(target_pos);
         double dist = sqrt(
             pow(jam_ecef.X - target_ecef.X, 2) +
             pow(jam_ecef.Y - target_ecef.Y, 2) +
             pow(jam_ecef.Z - target_ecef.Z, 2)
-        ); // ×Ü¾àÀë(Ã×)
+        ); // æ€»è·ç¦»(ç±³)
 
-        // ´¹Ö±/Ë®Æ½¾àÀë
+        // å‚ç›´/æ°´å¹³è·ç¦»
         double dist_vertical = fabs((jammer.pos.h_m - target_pos.h_m) * 1000);
         double dist_horizontal = sqrt(pow(dist, 2) - pow(dist_vertical, 2));
 
-        // ÌìÏßÑö½Ç(¡ã)
+        // å¤©çº¿ä»°è§’(Â°)
         double antenna_elevation = atan2(dist_vertical, dist_horizontal) * 180.0 / M_PI;
 
-        // Â·¾¶ËğºÄ¼ÆËã
+        // è·¯å¾„æŸè€—è®¡ç®—
         double loss = 0.0;
         if (antenna_elevation > 5 || dist < 5000) {
-            // FEÄ£ĞÍ£¨×ÔÓÉ¿Õ¼äËğºÄ£©
+            // FEæ¨¡å‹ï¼ˆè‡ªç”±ç©ºé—´æŸè€—ï¼‰
             loss = pow(4 * M_PI * dist * config.fc / config.c, 2);
         }
         else if (dist < 20000) {
-            // ROÄ£ĞÍ£¨ÉäÏß¹âÑ§£©
+            // ROæ¨¡å‹ï¼ˆå°„çº¿å…‰å­¦ï¼‰
             double refraction_factor = 1.0003;
             loss = pow(4 * M_PI * dist * config.fc * refraction_factor / config.c, 2);
         }
         else if (target_pos.h_m * 1000 < 10000) {
-            // PEÄ£ĞÍ£¨Å×Îï·½³Ì£©
+            // PEæ¨¡å‹ï¼ˆæŠ›ç‰©æ–¹ç¨‹ï¼‰
             loss = pow(4 * M_PI * dist * config.fc / config.c, 2) * 1.2;
         }
         else {
-            // XOÄ£ĞÍ£¨À©Õ¹¹âÑ§£©
+            // XOæ¨¡å‹ï¼ˆæ‰©å±•å…‰å­¦ï¼‰
             loss = pow(4 * M_PI * dist * config.fc / config.c, 2) * 0.8;
         }
 
-        // ¸ÉÈÅ½ÓÊÕ¹¦ÂÊ(W)
+        // å¹²æ‰°æ¥æ”¶åŠŸç‡(W)
         double jam_power_w = jammer.power;
-        // ÈôÊäÈëÎªdBm£¬×ª»»ÎªW£¨¿ÉÑ¡Âß¼­£©
+        // è‹¥è¾“å…¥ä¸ºdBmï¼Œè½¬æ¢ä¸ºWï¼ˆå¯é€‰é€»è¾‘ï¼‰
         if (jam_power_w < 100) {
             jam_power_w = pow(10, jam_power_w / 10);
         }
-        double Pj = jam_power_w * 1.0 / loss; // ÌìÏßÔöÒæ¼ò»¯Îª1
+        double Pj = jam_power_w * 1.0 / loss; // å¤©çº¿å¢ç›Šç®€åŒ–ä¸º1
 
         return Pj;
     }
 
-    // ÔØÔë±È¼ÆËã
+    // è½½å™ªæ¯”è®¡ç®—
     double GNSSJammerSim::calc_cnr(double Pj, const SimConfig& config, int jammer_idx) {
-        // »ı·Ö¼ÆËã¡ÒGJ(f)GS(f)df£¨»ı·Ö·¶Î§£ºfc - beta/2 µ½ fc + beta/2£©
+        // ç§¯åˆ†è®¡ç®—âˆ«GJ(f)GS(f)dfï¼ˆç§¯åˆ†èŒƒå›´ï¼šfc - beta/2 åˆ° fc + beta/2ï¼‰
         auto integrand = [&](double f) {
             double GJ, GS;
             calc_power_spectral_density(f, config, jammer_idx, GJ, GS);
@@ -208,19 +208,19 @@ namespace seven {
         );
         double integral_total = Pj * integral_result;
 
-        // ÔØÔë±È¼ÆËã£¨ÏßĞÔÖµ×ªdB-Hz£©
+        // è½½å™ªæ¯”è®¡ç®—ï¼ˆçº¿æ€§å€¼è½¬dB-Hzï¼‰
         double C_NJ_linear = config.satellite.carrier_power / integral_total;
         double C_NJ_dB = (C_NJ_linear > 0) ? 10 * log10(C_NJ_linear) : -100;
 
         return C_NJ_dB;
     }
 
-    // ¸ÉĞÅ±È¼ÆËã
+    // å¹²ä¿¡æ¯”è®¡ç®—
     double GNSSJammerSim::calc_jammer_to_signal_ratio(double Pj, const LLA& target_pos, const SimConfig& config) {
-        // ¼ÆËãÎÀĞÇĞÅºÅ×Ü½ÓÊÕ¹¦ÂÊPs(W)
+        // è®¡ç®—å«æ˜Ÿä¿¡å·æ€»æ¥æ”¶åŠŸç‡Ps(W)
         double Ps_total = 0.0;
         for (const auto& sat_pos : config.satellite.sat_pos) {
-            // ĞÇµØ¾àÀë¼ÆËã
+            // æ˜Ÿåœ°è·ç¦»è®¡ç®—
             ECEF sat_ecef = lla_to_ecef(sat_pos);
             ECEF target_ecef = lla_to_ecef(target_pos);
             double dist_sat_target = sqrt(
@@ -229,34 +229,34 @@ namespace seven {
                 pow(sat_ecef.Z - target_ecef.Z, 2)
             );
 
-            // ×ÔÓÉ¿Õ¼äËğºÄ
+            // è‡ªç”±ç©ºé—´æŸè€—
             double loss_sat = pow(4 * M_PI * dist_sat_target * config.fc / config.c, 2);
-            // GPSÎÀĞÇµäĞÍEIRP£º48.5 dBW = 70794.58 W
+            // GPSå«æ˜Ÿå…¸å‹EIRPï¼š48.5 dBW = 70794.58 W
             double sat_eirp = 70794.58;
             double Ps_sat = sat_eirp * 100 / loss_sat;
             Ps_total += Ps_sat;
         }
 
-        // ¸ÉĞÅ±È(dB)
+        // å¹²ä¿¡æ¯”(dB)
         if (Ps_total < 1e-20) {
-            return 200.0; // ±ÜÃâ³ıÁã£¬ÉèÎª¼«´óÖµ
+            return 200.0; // é¿å…é™¤é›¶ï¼Œè®¾ä¸ºæå¤§å€¼
         }
         double J_S = Pj / Ps_total;
         return 10 * log10(J_S);
     }
 
-    // ¸ú×Ù»·Îó²î¼ÆËã
+    // è·Ÿè¸ªç¯è¯¯å·®è®¡ç®—
     void GNSSJammerSim::calc_tracking_errors(double C_NJ_dB, double J_S_dB, const SimConfig& config, int jammer_idx, double& sigma_jpll, double& sigma_jdll) {
-        double J_S = pow(10, J_S_dB / 10); // ×ªÏßĞÔÖµ
+        double J_S = pow(10, J_S_dB / 10); // è½¬çº¿æ€§å€¼
         double C_NJ_linear = pow(10, C_NJ_dB / 10);
 
-        // 1. ÔØ²¨»·Õñµ´Æ÷²ü¶¯¦Ò_JPLL(¡ã)
+        // 1. è½½æ³¢ç¯æŒ¯è¡å™¨é¢¤åŠ¨Ïƒ_JPLL(Â°)
         double term = (config.Bp / C_NJ_linear) * (1 + 1 / (2 * config.Td * C_NJ_linear));
         sigma_jpll = (360.0 / (2 * M_PI)) * sqrt(term);
-        sigma_jpll = fmod(sigma_jpll, 360.0); // ÏŞÖÆÔÚ0-360¡ã
+        sigma_jpll = fmod(sigma_jpll, 360.0); // é™åˆ¶åœ¨0-360Â°
 
-        // 2. Âë»·¸ú×ÙÎó²î¦Ò_JDLL
-        // »ı·ÖÏî1£º¡ÒGJ(f)GS(f)¡¤sin?(¦Ğf d Tc) df
+        // 2. ç ç¯è·Ÿè¸ªè¯¯å·®Ïƒ_JDLL
+        // ç§¯åˆ†é¡¹1ï¼šâˆ«GJ(f)GS(f)Â·sin?(Ï€f d Tc) df
         auto integrand_sin2 = [&](double f) {
             double GJ, GS;
             calc_power_spectral_density(f, config, jammer_idx, GJ, GS);
@@ -269,7 +269,7 @@ namespace seven {
             config.fc + config.beta / 2
         );
 
-        // »ı·ÖÏî2£º¡Òf¡¤GJ(f)GS(f)¡¤sin(¦Ğf d Tc) df
+        // ç§¯åˆ†é¡¹2ï¼šâˆ«fÂ·GJ(f)GS(f)Â·sin(Ï€f d Tc) df
         auto integrand_fsin = [&](double f) {
             double GJ, GS;
             calc_power_spectral_density(f, config, jammer_idx, GJ, GS);
@@ -281,7 +281,7 @@ namespace seven {
             config.fc + config.beta / 2
         );
 
-        // »ı·ÖÏî3£º¡ÒGJ(f)GS(f)¡¤cos?(¦Ğf d Tc) df
+        // ç§¯åˆ†é¡¹3ï¼šâˆ«GJ(f)GS(f)Â·cos?(Ï€f d Tc) df
         auto integrand_cos2 = [&](double f) {
             double GJ, GS;
             calc_power_spectral_density(f, config, jammer_idx, GJ, GS);
@@ -294,7 +294,7 @@ namespace seven {
             config.fc + config.beta / 2
         );
 
-        // »ı·ÖÏî4£º¡ÒGJ(f)GS(f)¡¤cos(¦Ğf d Tc) df
+        // ç§¯åˆ†é¡¹4ï¼šâˆ«GJ(f)GS(f)Â·cos(Ï€f d Tc) df
         auto integrand_cos = [&](double f) {
             double GJ, GS;
             calc_power_spectral_density(f, config, jammer_idx, GJ, GS);
@@ -306,7 +306,7 @@ namespace seven {
             config.fc + config.beta / 2
         );
 
-        // Âë»·Îó²î¼ÆËã
+        // ç ç¯è¯¯å·®è®¡ç®—
         sigma_jdll = 0.0;
         if (integral_fsin != 0) {
             double numerator = sqrt(config.Bd * J_S * integral_sin2);
@@ -316,9 +316,9 @@ namespace seven {
         }
     }
 
-    // GDOP¼ÆËã
+    // GDOPè®¡ç®—
     double GNSSJammerSim::calc_gdop(const LLA& target_pos, const std::vector<LLA>& satellite_pos) {
-        // ¹¹½¨¼¸ºÎ¾ØÕóG
+        // æ„å»ºå‡ ä½•çŸ©é˜µG
         Eigen::MatrixXd G(satellite_pos.size(), 4);
         for (int i = 0; i < satellite_pos.size(); ++i) {
             ECEF sat_ecef = lla_to_ecef(satellite_pos[i]);
@@ -337,40 +337,40 @@ namespace seven {
             G(i, 3) = 1.0;
         }
 
-        // ¼ÆËãGDOP = sqrt(trace((G^T G)^-1))
-        double gdop = 10.0; // Ä¬ÈÏ×î²îÖµ
+        // è®¡ç®—GDOP = sqrt(trace((G^T G)^-1))
+        double gdop = 10.0; // é»˜è®¤æœ€å·®å€¼
         try {
             Eigen::MatrixXd GtG = G.transpose() * G;
             Eigen::MatrixXd GtG_inv = GtG.inverse();
             gdop = sqrt(GtG_inv.trace());
         }
         catch (...) {
-            // ¾ØÕó²»¿ÉÄæÊ±·µ»ØÄ¬ÈÏÖµ
+            // çŸ©é˜µä¸å¯é€†æ—¶è¿”å›é»˜è®¤å€¼
         }
         return gdop;
     }
 
-    // ¶¨Î»Îó²î¼ÆËã
+    // å®šä½è¯¯å·®è®¡ç®—
     void GNSSJammerSim::calc_pos_error(bool unlock_flag, double sigma_jdll, double gdop, const SimConfig& config, LLA& pos_error, ECEF& pos_error_m) {
         if (unlock_flag) {
-            // Ê§Ëø£º¹ßµ¼Æ¯ÒÆÎó²î
-            pos_error.lon_deg = config.ins_drift / 111;  // 1¡ã¡Ö111km£¬×ª»»Îª¶È
+            // å¤±é”ï¼šæƒ¯å¯¼æ¼‚ç§»è¯¯å·®
+            pos_error.lon_deg = config.ins_drift / 111;  // 1Â°â‰ˆ111kmï¼Œè½¬æ¢ä¸ºåº¦
             pos_error.lat_deg = config.ins_drift / 111;
-            pos_error.h_m = 0.1;                       // ¸ß¶ÈÎó²î(km)
+            pos_error.h_m = 0.1;                       // é«˜åº¦è¯¯å·®(km)
 
-            pos_error_m.X = config.ins_drift * 1000; // Ã×
+            pos_error_m.X = config.ins_drift * 1000; // ç±³
             pos_error_m.Y = config.ins_drift * 1000;
             pos_error_m.Z = config.ins_drift * 1000;
         }
         else {
-            // Î´Ê§Ëø£ºÎ±¾àÎó²î¡ÁGDOP
-            double pseudo_range_error = sigma_jdll * config.Tc * config.c; // Î±¾àÎó²î(Ã×)
+            // æœªå¤±é”ï¼šä¼ªè·è¯¯å·®Ã—GDOP
+            double pseudo_range_error = sigma_jdll * config.Tc * config.c; // ä¼ªè·è¯¯å·®(ç±³)
             double error_m = pseudo_range_error * gdop;
 
-            // ×ª»»Îª¾­Î³¸ßÎó²î£¨¶È/km£©
-            pos_error.lon_deg = error_m / (1000 * 111); // Ã×¡ú¶È
+            // è½¬æ¢ä¸ºç»çº¬é«˜è¯¯å·®ï¼ˆåº¦/kmï¼‰
+            pos_error.lon_deg = error_m / (1000 * 111); // ç±³â†’åº¦
             pos_error.lat_deg = error_m / (1000 * 111);
-            pos_error.h_m = error_m / 1000;           // Ã×¡úkm
+            pos_error.h_m = error_m / 1000;           // ç±³â†’km
 
             pos_error_m.X = error_m;
             pos_error_m.Y = error_m;
@@ -391,10 +391,10 @@ namespace seven {
 
         int jammer_count = config.jammers.size();
         if (jammer_count == 0) {
-            return result; // ÎŞ¸ÉÈÅÔ´£¬·µ»ØÄ¬ÈÏÖµ
+            return result; // æ— å¹²æ‰°æºï¼Œè¿”å›é»˜è®¤å€¼
         }
 
-        // ÀÛ¼ÓËùÓĞ¸ÉÈÅÔ´µÄÓ°Ïì
+        // ç´¯åŠ æ‰€æœ‰å¹²æ‰°æºçš„å½±å“
         double sum_C_NJ = 0.0;
         double sum_J_S = 0.0;
         double sum_sigma_jpll = 0.0;
@@ -402,27 +402,27 @@ namespace seven {
         int unlock_num = 0;
 
         for (int i = 0; i < jammer_count; i++) {
-            // 1. ¼ÆËã¸ÉÈÅ½ÓÊÕ¹¦ÂÊ
+            // 1. è®¡ç®—å¹²æ‰°æ¥æ”¶åŠŸç‡
             double Pj = calc_jam_power_apm(config.jammers[i], target_pos, config);
 
-            // 2. ¼ÆËãÔØÔë±È
+            // 2. è®¡ç®—è½½å™ªæ¯”
             double C_NJ = calc_cnr(Pj, config, i);
             sum_C_NJ += C_NJ;
 
-            // 3. ¼ÆËã¸ÉĞÅ±È
+            // 3. è®¡ç®—å¹²ä¿¡æ¯”
             double J_S = calc_jammer_to_signal_ratio(Pj, target_pos, config);
             sum_J_S += J_S;
 
-            if (C_NJ < 80)// ¸ÉÈÅÓĞĞ§£¨ÔØÔë±ÈµÍÓÚÕı³£ãĞÖµ£© Ô­À´ÊÇ30
+            if (C_NJ < 80)// å¹²æ‰°æœ‰æ•ˆï¼ˆè½½å™ªæ¯”ä½äºæ­£å¸¸é˜ˆå€¼ï¼‰ åŸæ¥æ˜¯30
             {
 
-                // 4. ¼ÆËã¸ú×Ù»·Îó²î
+                // 4. è®¡ç®—è·Ÿè¸ªç¯è¯¯å·®
                 double sigma_jpll, sigma_jdll;
                 calc_tracking_errors(C_NJ, J_S, config, i, sigma_jpll, sigma_jdll);
                 sum_sigma_jpll += sigma_jpll;
                 sum_sigma_jdll += sigma_jdll;
 
-                // 5. ÅĞ¶¨Ê§Ëø
+                // 5. åˆ¤å®šå¤±é”
                 bool pll_unlock = (sigma_jpll > config.pll_unlock_thresh);
                 bool dll_unlock = (sigma_jdll > config.dll_unlock_thresh);
                 if (pll_unlock || dll_unlock) {
@@ -431,14 +431,14 @@ namespace seven {
             }
         }
 
-        // Æ½¾ùËùÓĞ¸ÉÈÅÔ´µÄ½á¹û
+        // å¹³å‡æ‰€æœ‰å¹²æ‰°æºçš„ç»“æœ
         result.C_NJ_dB = sum_C_NJ / jammer_count;
         result.J_S_dB = sum_J_S / jammer_count;
         result.sigma_jpll = sum_sigma_jpll / jammer_count;
         result.sigma_jdll = sum_sigma_jdll / jammer_count;
-        result.unlock_flag = (unlock_num > 0); // ÈÎÒâ¸ÉÈÅÔ´µ¼ÖÂÊ§ËøÔòÕûÌåÊ§Ëø
+        result.unlock_flag = (unlock_num > 0); // ä»»æ„å¹²æ‰°æºå¯¼è‡´å¤±é”åˆ™æ•´ä½“å¤±é”
 
-        // ¼ÆËã¶¨Î»Îó²î
+        // è®¡ç®—å®šä½è¯¯å·®
         calc_pos_error(
             result.unlock_flag,
             result.sigma_jdll,
@@ -451,7 +451,7 @@ namespace seven {
         return result;
     }
 
-    // ÅúÁ¿´¦Àíº½¼£Êı¾İ½Ó¿Ú
+    // æ‰¹é‡å¤„ç†èˆªè¿¹æ•°æ®æ¥å£
     std::vector<BarrageTrackResult> GNSSJammerSim::batch_calc(const std::vector<LLA>& track_points, const SimConfig& config) {
         std::vector<BarrageTrackResult> results;
         for (const auto& point : track_points) {
@@ -460,12 +460,15 @@ namespace seven {
         return results;
     }
 
-    // ========================= 3. Ê¹ÓÃÊ¾Àı =========================
+    // ========================= 3. ä½¿ç”¨ç¤ºä¾‹ =========================
     int Barrage_Test(Json::Value input, Json::Value& trajectory_result) {
 
         Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
 
-        // 1. ³õÊ¼»¯ÅäÖÃ
+        // è‹¥å­˜åœ¨"jammer_num"åˆ™å–å…¶æ•´æ•°å€¼ï¼Œä¸å­˜åœ¨åˆ™è¿”å›é»˜è®¤å€¼0ï¼ˆå¯è‡ªå®šä¹‰ï¼‰
+        int jammer_num = input.get("jammer_num", 1).asInt();
+
+        // 1. åˆå§‹åŒ–é…ç½®
         SimConfig config;
 
         if (jammer_strength == Jammer_Level::High)
@@ -481,7 +484,23 @@ namespace seven {
             config.beta = 2e5;
         }
 
-        // ÅäÖÃÎÀĞÇ²ÎÊı
+        //å¹²æ‰°æºæ·»åŠ 
+        for (int i = 0; i < jammer_num; i++)
+        {
+            //å¹²æ‰°ä½ç½®è®¡ç®—
+
+
+            // é…ç½®å¹²æ‰°æº
+            JammerParam jammer;
+            jammer.pos = { 120.0, 27.63, 8.3 };
+            jammer.power = 10.0; // W
+            jammer.type = "continuous_wave";
+            jammer.bandwidth = 20e6;
+            jammer.freq = GNSS_FC;
+            config.jammers.push_back(jammer);
+        }
+
+        // é…ç½®å«æ˜Ÿå‚æ•°
         config.satellite.carrier_power = 1e-16;
         config.satellite.sat_pos = {
             {125.0, 30.0, 5000},
@@ -490,14 +509,14 @@ namespace seven {
             {110.0, 28.0, 5000}
         };
 
-        // ÅäÖÃ¸ÉÈÅÔ´
-        JammerParam jammer1;
-        jammer1.pos = {120.0, 27.63, 8.3};
-        jammer1.power = 10.0; // W
-        jammer1.type = "continuous_wave";
-        jammer1.bandwidth = 20e6;
-        jammer1.freq = GNSS_FC;
-        config.jammers.push_back(jammer1);
+        // é…ç½®å¹²æ‰°æº
+        //JammerParam jammer1;
+        //jammer1.pos = {120.0, 27.63, 8.3};
+        //jammer1.power = 10.0; // W
+        //jammer1.type = "continuous_wave";
+        //jammer1.bandwidth = 20e6;
+        //jammer1.freq = GNSS_FC;
+        //config.jammers.push_back(jammer1);
 
         /*JammerParam jammer2;
         jammer2.pos = { 119.75, 27.64, 8.3 };
@@ -507,14 +526,14 @@ namespace seven {
         jammer2.freq = GNSS_FC;
         config.jammers.push_back(jammer2);*/
 
-        // 2. ´ı´¦ÀíµÄº½¼£Êı¾İ
+        // 2. å¾…å¤„ç†çš„èˆªè¿¹æ•°æ®
         std::vector<LLA> track_points = {
-            {119.045, 27.2233, 1.3},   // º½¼£µã1
+            {119.045, 27.2233, 1.3},   // èˆªè¿¹ç‚¹1
         };
 
         LLA target_velocity = { 0.005, 0.003, 0 };
 
-        UINT sim_time = 400;  // ·ÂÕæÊ±³¤(s)200
+        UINT sim_time = 400;  // ä»¿çœŸæ—¶é•¿(s)200
         for (int step = 0; step < sim_time; ++step)
         {
             LLA target_pos;
@@ -522,21 +541,21 @@ namespace seven {
             track_points.push_back(target_pos);
         }
 
-        // 3. ³õÊ¼»¯·ÂÕæÀà²¢¼ÆËã
+        // 3. åˆå§‹åŒ–ä»¿çœŸç±»å¹¶è®¡ç®—
         GNSSJammerSim sim;
         std::vector<BarrageTrackResult> results = sim.batch_calc(track_points, config);
 
-        // 4. Êä³ö½á¹û
+        // 4. è¾“å‡ºç»“æœ
         trajectory_result.clear();
 
-        bool last_unlock_status = false;     //ÉÏÒ»´ÎÊ§Ëø×´Ì¬
-        bool cur_unlock_status = false;     //µ±Ç°Ê§Ëø×´Ì¬
+        bool last_unlock_status = false;     //ä¸Šä¸€æ¬¡å¤±é”çŠ¶æ€
+        bool cur_unlock_status = false;     //å½“å‰å¤±é”çŠ¶æ€
         ECEF jammer_centre;
-        ECEF jammer_start;                   //¸ÉÈÅ¿ªÊ¼µã
-        ECEF jammer_end;                     //¸ÉÈÅ½áÊøµã
-        double r_jammer = 0;                     //¸ÉÈÅ°ë¾¶
+        ECEF jammer_start;                   //å¹²æ‰°å¼€å§‹ç‚¹
+        ECEF jammer_end;                     //å¹²æ‰°ç»“æŸç‚¹
+        double r_jammer = 0;                     //å¹²æ‰°åŠå¾„
 
-        //¸ÉÈÅµãĞÅÏ¢
+        //å¹²æ‰°ç‚¹ä¿¡æ¯
         Json::Value& jammer_list = trajectory_result["jammer_list"];
         for (int cnt = 0; cnt < config.jammers.size(); cnt++)
         {
@@ -546,51 +565,52 @@ namespace seven {
             jammer_mes["pos_lla"]["lat_deg"] = config.jammers[cnt].pos.lat_deg;
             jammer_mes["pos_lla"]["h_m"] = config.jammers[cnt].pos.h_m * 1000;      //km->m
 
-            ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
+            /*ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
             jammer_centre.X = tmp_pos.X;
             jammer_centre.Y = tmp_pos.Y;
-            jammer_centre.Z = tmp_pos.Z;
+            jammer_centre.Z = tmp_pos.Z;*/
 
             jammer_list.append(jammer_mes);
         }
 
         Json::Value& track_points_json = trajectory_result["track_points"];
-        // ±éÀúº½¼£µã½á¹û£¬Ğ´ÈëJSON
+        // éå†èˆªè¿¹ç‚¹ç»“æœï¼Œå†™å…¥JSON
         for (int i = 0; i < results.size(); ++i) {
-            // ¶¨Òåµ¥¸öº½¼£µãµÄJSON¶ÔÏó£¬´æ´¢µ±Ç°µãµÄËùÓĞ²ÎÊı
+            // å®šä¹‰å•ä¸ªèˆªè¿¹ç‚¹çš„JSONå¯¹è±¡ï¼Œå­˜å‚¨å½“å‰ç‚¹çš„æ‰€æœ‰å‚æ•°
             Json::Value track_point;
 
-            // º½¼£µãĞòºÅ(ºÍÔ­´òÓ¡Ò»ÖÂ£¬i+1)
+            // èˆªè¿¹ç‚¹åºå·(å’ŒåŸæ‰“å°ä¸€è‡´ï¼Œi+1)
             track_point["step"] = i + 1;
-            //Ä¿±êµã
+            //ç›®æ ‡ç‚¹
             track_point["pos_tar_lla"]["lon_deg"] = track_points[i].lon_deg;
             track_point["pos_tar_lla"]["lat_deg"] = track_points[i].lat_deg;
             track_point["pos_tar_lla"]["h_m"] = track_points[i].h_m * 1000;
-            // ÔØÔë±È(dB-Hz)
-            track_point["cn0_dbhz"] = results[i].C_NJ_dB;
-            // ¸ÉĞÅ±È(dB)
-            track_point["js_dB"] = results[i].J_S_dB;
-            // ÔØ²¨»·Îó²î(¡ã)
-            track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
-            // Âë»·Îó²î£¨±£ÁôÔ­±äÁ¿Ãû£¬ÎŞµ¥Î»Ôò²»±ê×¢£©
-            track_point["code_loop_error"] = results[i].sigma_jdll;
-            // Ê§Ëø±êÖ¾
-            track_point["unlock_flag_bool"] = results[i].unlock_flag;  // ²¼¶ûÖµ
 
-            // ¾­Î³¶È¸ß¶¨Î»Îó²î£¨¡ã/¡ã/m£¬ĞŞÕıÔ­´úÂëkm±ê×¢´íÎó£¬h_mÊÇÃ×£¬ÌùºÏ±äÁ¿¶¨Òå£©
+            // è½½å™ªæ¯”(dB-Hz)
+            track_point["cn0_dbhz"] = results[i].C_NJ_dB;
+            // å¹²ä¿¡æ¯”(dB)
+            track_point["js_dB"] = results[i].J_S_dB;
+            // è½½æ³¢ç¯è¯¯å·®(Â°)
+            track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
+            // ç ç¯è¯¯å·®ï¼ˆä¿ç•™åŸå˜é‡åï¼Œæ— å•ä½åˆ™ä¸æ ‡æ³¨ï¼‰
+            track_point["code_loop_error"] = results[i].sigma_jdll;
+            // å¤±é”æ ‡å¿—
+            track_point["unlock_flag_bool"] = results[i].unlock_flag;  // å¸ƒå°”å€¼
+
+            // ç»çº¬åº¦é«˜å®šä½è¯¯å·®ï¼ˆÂ°/Â°/mï¼Œä¿®æ­£åŸä»£ç kmæ ‡æ³¨é”™è¯¯ï¼Œh_mæ˜¯ç±³ï¼Œè´´åˆå˜é‡å®šä¹‰ï¼‰
             track_point["pos_error_lla"]["lon_deg"] = results[i].pos_error.lon_deg;
             track_point["pos_error_lla"]["lat_deg"] = results[i].pos_error.lat_deg;
             track_point["pos_error_lla"]["h_m"] = results[i].pos_error.h_m * 1000;
 
-            // X/Y/Z¶¨Î»Îó²î£¨Ã×£©
+            // X/Y/Zå®šä½è¯¯å·®ï¼ˆç±³ï¼‰
             track_point["pos_error_xyz_m"]["X"] = results[i].pos_error_m.X;
             track_point["pos_error_xyz_m"]["Y"] = results[i].pos_error_m.Y;
             track_point["pos_error_xyz_m"]["Z"] = results[i].pos_error_m.Z;
 
-            // GDOPÖµ
+            // GDOPå€¼
             //track_point["gdop"] = results[i].gdop;
 
-            // ½«µ±Ç°º½¼£µã¶ÔÏó¼ÓÈëÊı×é£¬trajectory_result×îÖÕÊÇJSONÊı×é
+            // å°†å½“å‰èˆªè¿¹ç‚¹å¯¹è±¡åŠ å…¥æ•°ç»„ï¼Œtrajectory_resultæœ€ç»ˆæ˜¯JSONæ•°ç»„
             track_points_json.append(track_point);
 
             last_unlock_status = cur_unlock_status;
@@ -618,7 +638,7 @@ namespace seven {
             }
         }
 
-        //¸ÉÈÅ·¶Î§
+        //å¹²æ‰°èŒƒå›´
         Json::Value& jammer_area_json = trajectory_result["jammer area"];
         LLA jammer_pos_centra = sim.ecef_to_lla(jammer_centre);
         jammer_pos_centra.h_m = jammer_pos_centra.h_m * 1000;
@@ -629,5 +649,7 @@ namespace seven {
 
         return 0;
     }
+
+
 
 }

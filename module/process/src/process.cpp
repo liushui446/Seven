@@ -1,11 +1,11 @@
-#include "process/process.hpp"
+ï»¿#include "process/process.hpp"
 #include "transformation/transformation.hpp"
 #include "barrage/barrage.hpp"
 #include "deception/deception.hpp"
 
 #include <thread>
 #include <chrono>
-// Windows ¹ÜµÀÍ·ÎÄ¼ş
+// Windows ç®¡é“å¤´æ–‡ä»¶
 #include <windows.h>
 #include <cstring>
 #include <stdexcept>
@@ -15,12 +15,12 @@ using namespace Json;
 
 namespace seven {
 
-    // ¹ÜµÀ¶ÁĞ´»º³åÇø´óĞ¡
-    const int BUF_SIZE = 4096 * 1000;
-    // JSON Êı¾İ·Ö¸ô·û£¨½â¾ö¹ÜµÀÕ³°ü£¬ĞèÈ·±£·Ö¸ô·û²»ÔÚ JSON ÄÚÈİÖĞ£©
+    // ç®¡é“è¯»å†™ç¼“å†²åŒºå¤§å°
+    const int BUF_SIZE = 4096 * 10000;
+    // JSON æ•°æ®åˆ†éš”ç¬¦ï¼ˆè§£å†³ç®¡é“ç²˜åŒ…ï¼Œéœ€ç¡®ä¿åˆ†éš”ç¬¦ä¸åœ¨ JSON å†…å®¹ä¸­ï¼‰
     const std::string JSON_DELIMITER = "\n###END###\n";
 
-    //¿ØÖÆDOUBLEÀàĞÍ¾«¶È,²¢×ª³Éstring
+    //æ§åˆ¶DOUBLEç±»å‹ç²¾åº¦,å¹¶è½¬æˆstring
     string formatDouble(double value, int precision) {
         std::ostringstream stream;
         stream << std::fixed << std::setprecision(precision) << value;
@@ -34,50 +34,50 @@ namespace seven {
     }
 
     /**
-     * @brief ½« Json::Value ĞòÁĞ»¯Îª´ø·Ö¸ô·ûµÄ×Ö·û´®£¨ÊÊÅä¹ÜµÀ´«Êä£©
-     * @param root JSON ¸ù½Úµã
-     * @return ĞòÁĞ»¯ºóµÄ×Ö·û´®£¨º¬·Ö¸ô·û£©
+     * @brief å°† Json::Value åºåˆ—åŒ–ä¸ºå¸¦åˆ†éš”ç¬¦çš„å­—ç¬¦ä¸²ï¼ˆé€‚é…ç®¡é“ä¼ è¾“ï¼‰
+     * @param root JSON æ ¹èŠ‚ç‚¹
+     * @return åºåˆ—åŒ–åçš„å­—ç¬¦ä¸²ï¼ˆå«åˆ†éš”ç¬¦ï¼‰
      */
     std::string jsonToString(const Json::Value& root) {
         Json::StreamWriterBuilder builder;
-        // ÃÀ»¯Êä³ö£¨¿ÉÑ¡£¬´«ÊäÊ±Ò²¿ÉÊ¹ÓÃ FastWriter ¼õĞ¡Ìå»ı£©
+        // ç¾åŒ–è¾“å‡ºï¼ˆå¯é€‰ï¼Œä¼ è¾“æ—¶ä¹Ÿå¯ä½¿ç”¨ FastWriter å‡å°ä½“ç§¯ï¼‰
         builder["indentation"] = "  ";
         std::string json_str = Json::writeString(builder, root);
-        // ×·¼Ó·Ö¸ô·û£¬ÓÃÓÚÊ¶±ğµ¥´Î´«ÊäµÄ½áÊø
+        // è¿½åŠ åˆ†éš”ç¬¦ï¼Œç”¨äºè¯†åˆ«å•æ¬¡ä¼ è¾“çš„ç»“æŸ
         return json_str + JSON_DELIMITER;
     }
 
     /**
-     * @brief ´Ó´ø·Ö¸ô·ûµÄ×Ö·û´®ÖĞ½âÎö³ö Json::Value
-     * @param data ¹ÜµÀ¶ÁÈ¡µÄÔ­Ê¼Êı¾İ
-     * @param root Êä³öµÄ JSON ¸ù½Úµã
-     * @return ½âÎö³É¹¦·µ»Ø true£¬Ê§°Ü·µ»Ø false
+     * @brief ä»å¸¦åˆ†éš”ç¬¦çš„å­—ç¬¦ä¸²ä¸­è§£æå‡º Json::Value
+     * @param data ç®¡é“è¯»å–çš„åŸå§‹æ•°æ®
+     * @param root è¾“å‡ºçš„ JSON æ ¹èŠ‚ç‚¹
+     * @return è§£ææˆåŠŸè¿”å› trueï¼Œå¤±è´¥è¿”å› false
      */
     bool stringToJson(const std::string& data, Json::Value& root) {
-        // ½ØÈ¡·Ö¸ô·ûÇ°µÄÓĞĞ§ JSON Êı¾İ
+        // æˆªå–åˆ†éš”ç¬¦å‰çš„æœ‰æ•ˆ JSON æ•°æ®
         size_t delimiter_pos = data.find(JSON_DELIMITER);
         if (delimiter_pos == std::string::npos) {
-            std::cerr << "Î´ÕÒµ½ JSON Êı¾İ·Ö¸ô·û£¬¿ÉÄÜÕ³°ü»òÊı¾İ²»ÍêÕû" << std::endl;
+            std::cerr << "æœªæ‰¾åˆ° JSON æ•°æ®åˆ†éš”ç¬¦ï¼Œå¯èƒ½ç²˜åŒ…æˆ–æ•°æ®ä¸å®Œæ•´" << std::endl;
             return false;
         }
         std::string json_str = data.substr(0, delimiter_pos);
 
-        // ½âÎö JSON ×Ö·û´®
+        // è§£æ JSON å­—ç¬¦ä¸²
         Json::CharReaderBuilder builder;
         JSONCPP_STRING err;
         std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
         if (!reader->parse(json_str.c_str(), json_str.c_str() + json_str.size(), &root, &err)) {
-            std::cerr << "JSON ½âÎöÊ§°Ü: " << err << std::endl;
+            std::cerr << "JSON è§£æå¤±è´¥: " << err << std::endl;
             return false;
         }
         return true;
     }
 
     /**
-     * @brief ´Ó×Ö·û´®ÖĞ½âÎö³ö ÃüÁîÀàĞÍ
-     * @param data ¶ÁÈ¡µÄ JSON
-     * Ñ¹ÖÆ£º1; ÆÛÆ­£º2 ;±à¶Ó£º3;
-     * @param root Êä³öµÄ JSON ¸ù½Úµã
+     * @brief ä»å­—ç¬¦ä¸²ä¸­è§£æå‡º å‘½ä»¤ç±»å‹
+     * @param data è¯»å–çš„ JSON
+     * å‹åˆ¶ï¼š1; æ¬ºéª—ï¼š2 ;ç¼–é˜Ÿï¼š3;
+     * @param root è¾“å‡ºçš„ JSON æ ¹èŠ‚ç‚¹
      */
     void parser_cmd(Json::Value param, Json::Value& result)
     {
@@ -96,21 +96,20 @@ namespace seven {
         }
         else
         {
-            Json::Value result;
-            result["status"] = "error";  // ×Ö·û´®Öµ
-            result["message"] = std::string("´¦ÀíÃüÁîÊ§°Ü£º");  // Æ´½Ó×Ö·û´®
-            result["data"] = Json::nullValue;  // ¿ÕÖµ£¨Ìæ´ú nullptr£¬JsonCpp ×¨ÓÃ£©
+            result["status"] = "error";  // å­—ç¬¦ä¸²å€¼
+            result["message"] = std::string("parser command failï¼š");  // æ‹¼æ¥å­—ç¬¦ä¸²
+            result["data"] = Json::nullValue;  // ç©ºå€¼ï¼ˆæ›¿ä»£ nullptrï¼ŒJsonCpp ä¸“ç”¨ï¼‰
         }
     }
 
-    // ¹ÜµÀ·şÎñ¶Ë£º´¦Àíµ¥¸ö¿Í»§¶ËÁ¬½Ó
+    // ç®¡é“æœåŠ¡ç«¯ï¼šå¤„ç†å•ä¸ªå®¢æˆ·ç«¯è¿æ¥
     void handle_client(HANDLE hPipe) {
         char buffer[4096] = { 0 };
         DWORD bytesRead = 0;
 
-        // ³ÖĞø¶ÁÈ¡¿Í»§¶Ë£¨·ÂÕæÆ½Ì¨£©·¢ËÍµÄÃüÁî
+        // æŒç»­è¯»å–å®¢æˆ·ç«¯ï¼ˆä»¿çœŸå¹³å°ï¼‰å‘é€çš„å‘½ä»¤
         while (true) {
-            // ¶ÁÈ¡¹ÜµÀÖĞµÄÃüÁî£¨×èÈû£¬Ö±µ½ÓĞÊı¾İ£©
+            // è¯»å–ç®¡é“ä¸­çš„å‘½ä»¤ï¼ˆé˜»å¡ï¼Œç›´åˆ°æœ‰æ•°æ®ï¼‰
             BOOL ret = ReadFile(
                 hPipe,
                 buffer,
@@ -120,15 +119,15 @@ namespace seven {
             );
 
             if (!ret || bytesRead == 0) {
-                // ¿Í»§¶Ë¶Ï¿ªÁ¬½Ó£¬ÍË³öµ±Ç°´¦ÀíÏß³Ì
-                std::cout << "¿Í»§¶Ë¶Ï¿ªÁ¬½Ó" << std::endl;
+                // å®¢æˆ·ç«¯æ–­å¼€è¿æ¥ï¼Œé€€å‡ºå½“å‰å¤„ç†çº¿ç¨‹
+                std::cout << "å®¢æˆ·ç«¯æ–­å¼€è¿æ¥" << std::endl;
                 break;
             }
 
-            // ½âÎö½ÓÊÕµ½µÄ JSON ÃüÁî
-            buffer[bytesRead] = '\0'; // È·±£×Ö·û´®½áÊø
+            // è§£ææ¥æ”¶åˆ°çš„ JSON å‘½ä»¤
+            buffer[bytesRead] = '\0'; // ç¡®ä¿å­—ç¬¦ä¸²ç»“æŸ
             std::string cmd_str(buffer);
-            std::cout << "ÊÕµ½ÃüÁî£º" << cmd_str << std::endl;
+            std::cout << "æ”¶åˆ°å‘½ä»¤ï¼š" << cmd_str << std::endl;
 
             try {
                 Json::Value cmd_mes;
@@ -138,11 +137,11 @@ namespace seven {
                 }
 
                 Json::Value result;
-                // Ö´ĞĞ¼ÆËã
+                // æ‰§è¡Œè®¡ç®—
                 parser_cmd(cmd_mes, result);
-                std::string result_str = jsonToString(result); // ×ªÎª JSON ×Ö·û´®
+                std::string result_str = jsonToString(result); // è½¬ä¸º JSON å­—ç¬¦ä¸²
 
-                // ½«½á¹ûĞ´»Ø¹ÜµÀ£¨·µ»Ø¸ø·ÂÕæÆ½Ì¨£©
+                // å°†ç»“æœå†™å›ç®¡é“ï¼ˆè¿”å›ç»™ä»¿çœŸå¹³å°ï¼‰
                 DWORD bytesWritten = 0;
                 WriteFile(
                     hPipe,
@@ -154,15 +153,15 @@ namespace seven {
             }
             catch (const std::exception& e)
             {
-                // ¹¹Ôì´íÎó½á¹û·µ»Ø¸ø¿Í»§¶Ë
+                // æ„é€ é”™è¯¯ç»“æœè¿”å›ç»™å®¢æˆ·ç«¯
                 Json::Value error_result;
-                error_result["status"] = "error";  // ×Ö·û´®Öµ
-                error_result["message"] = std::string("´¦ÀíÃüÁîÊ§°Ü£º") + e.what();  // Æ´½Ó×Ö·û´®
-                error_result["data"] = Json::nullValue;  // ¿ÕÖµ£¨Ìæ´ú nullptr£¬JsonCpp ×¨ÓÃ£©
+                error_result["status"] = "error";  // å­—ç¬¦ä¸²å€¼
+                error_result["message"] = std::string("process commande failï¼š") + e.what();  // æ‹¼æ¥å­—ç¬¦ä¸²
+                error_result["data"] = Json::nullValue;  // ç©ºå€¼ï¼ˆæ›¿ä»£ nullptrï¼ŒJsonCpp ä¸“ç”¨ï¼‰
 
-                std::string result_str = jsonToString(error_result); // ×ªÎª JSON ×Ö·û´®
+                std::string result_str = jsonToString(error_result); // è½¬ä¸º JSON å­—ç¬¦ä¸²
 
-                // ½«½á¹ûĞ´»Ø¹ÜµÀ£¨·µ»Ø¸ø·ÂÕæÆ½Ì¨£©
+                // å°†ç»“æœå†™å›ç®¡é“ï¼ˆè¿”å›ç»™ä»¿çœŸå¹³å°ï¼‰
                 DWORD bytesWritten = 0;
                 WriteFile(
                     hPipe,
@@ -173,50 +172,50 @@ namespace seven {
                 );
             }
 
-            // Çå¿Õ»º³åÇø
+            // æ¸…ç©ºç¼“å†²åŒº
             memset(buffer, 0, sizeof(buffer));
         }
 
-        // ¹Ø±Õ¹ÜµÀ¾ä±ú
+        // å…³é—­ç®¡é“å¥æŸ„
         CloseHandle(hPipe);
     }
 
-    // Æô¶¯¹ÜµÀ·şÎñ¶Ë£¬³ÖĞø¼àÌıÁ¬½Ó
+    // å¯åŠ¨ç®¡é“æœåŠ¡ç«¯ï¼ŒæŒç»­ç›‘å¬è¿æ¥
     void start_pipe_server() {
-        // ¹ÜµÀÃû³Æ£¨Windows ¸ñÊ½£º\\.\pipe\¹ÜµÀÃû£¬ĞèÎ¨Ò»£©
+        // ç®¡é“åç§°ï¼ˆWindows æ ¼å¼ï¼š\\.\pipe\ç®¡é“åï¼Œéœ€å”¯ä¸€ï¼‰
         const std::wstring pipe_name = L"\\\\.\\pipe\\SimCalculatorPipe";
 
 
         while (true) {
-            // ´´½¨ÃüÃû¹ÜµÀ
+            // åˆ›å»ºå‘½åç®¡é“
             HANDLE hPipe = CreateNamedPipeW(
                 pipe_name.c_str(),
-                PIPE_ACCESS_DUPLEX,       // Ë«Ïò¹ÜµÀ£¨¿É¶Á¿ÉĞ´£©
-                PIPE_TYPE_MESSAGE |       // ÏûÏ¢Ä£Ê½£¨°´ÏûÏ¢±ß½ç¶ÁÈ¡£©
+                PIPE_ACCESS_DUPLEX,       // åŒå‘ç®¡é“ï¼ˆå¯è¯»å¯å†™ï¼‰
+                PIPE_TYPE_MESSAGE |       // æ¶ˆæ¯æ¨¡å¼ï¼ˆæŒ‰æ¶ˆæ¯è¾¹ç•Œè¯»å–ï¼‰
                 PIPE_READMODE_MESSAGE |
-                PIPE_WAIT,                // ×èÈûÄ£Ê½
-                PIPE_UNLIMITED_INSTANCES, // ÔÊĞí¶à¸ö¿Í»§¶ËÁ¬½Ó£¨°´Ğè£©
-                4096,                  // Êä³ö»º³åÇø´óĞ¡
-                4096,                  // ÊäÈë»º³åÇø´óĞ¡
-                0,                        // Ä¬ÈÏ³¬Ê±
-                NULL                      // °²È«ÊôĞÔ
+                PIPE_WAIT,                // é˜»å¡æ¨¡å¼
+                PIPE_UNLIMITED_INSTANCES, // å…è®¸å¤šä¸ªå®¢æˆ·ç«¯è¿æ¥ï¼ˆæŒ‰éœ€ï¼‰
+                4096,                  // è¾“å‡ºç¼“å†²åŒºå¤§å°
+                4096,                  // è¾“å…¥ç¼“å†²åŒºå¤§å°
+                0,                        // é»˜è®¤è¶…æ—¶
+                NULL                      // å®‰å…¨å±æ€§
             );
 
             if (hPipe == INVALID_HANDLE_VALUE) {
-                std::cerr << "´´½¨¹ÜµÀÊ§°Ü£¬´íÎóÂë£º" << GetLastError() << std::endl;
+                std::cerr << "åˆ›å»ºç®¡é“å¤±è´¥ï¼Œé”™è¯¯ç ï¼š" << GetLastError() << std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 continue;
             }
 
-            // µÈ´ı¿Í»§¶Ë£¨·ÂÕæÆ½Ì¨£©Á¬½Ó£¨×èÈû£©
-            std::cout << "µÈ´ı·ÂÕæÆ½Ì¨Á¬½Ó..." << std::endl;
+            // ç­‰å¾…å®¢æˆ·ç«¯ï¼ˆä»¿çœŸå¹³å°ï¼‰è¿æ¥ï¼ˆé˜»å¡ï¼‰
+            std::cout << "ç­‰å¾…ä»¿çœŸå¹³å°è¿æ¥..." << std::endl;
             BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
 
             if (connected) {
-                std::cout << "·ÂÕæÆ½Ì¨ÒÑÁ¬½Ó" << std::endl;
-                // Æô¶¯Ïß³Ì´¦Àíµ±Ç°¿Í»§¶Ë£¨Ö§³Ö²¢·¢Á¬½Ó£¬°´Ğè£©
+                std::cout << "ä»¿çœŸå¹³å°å·²è¿æ¥" << std::endl;
+                // å¯åŠ¨çº¿ç¨‹å¤„ç†å½“å‰å®¢æˆ·ç«¯ï¼ˆæ”¯æŒå¹¶å‘è¿æ¥ï¼ŒæŒ‰éœ€ï¼‰
                 std::thread client_thread(handle_client, hPipe);
-                client_thread.detach(); // ·ÖÀëÏß³Ì£¬ÎŞĞèµÈ´ı
+                client_thread.detach(); // åˆ†ç¦»çº¿ç¨‹ï¼Œæ— éœ€ç­‰å¾…
             }
             else {
                 CloseHandle(hPipe);

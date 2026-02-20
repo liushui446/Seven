@@ -52,8 +52,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)  # 动态库输出�
 
 # 复制三方库dll文件
 file(GLOB JSON_DEBUG_FILES ${3DRPARTY_DIR}/jsoncpp/Debug/*)
+file(GLOB JSON_RELEASE_FILES ${3DRPARTY_DIR}/jsoncpp/Release/*)
 file(COPY ${JSON_DEBUG_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug)
-
+file(COPY ${JSON_RELEASE_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Release)
 
 # Add sub directories
 add_subdirectory(app)

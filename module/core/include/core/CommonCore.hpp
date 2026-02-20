@@ -178,6 +178,31 @@ namespace seven
             return *this;
         }
     };
+
+    class PlatformData
+    {
+    public:
+        PlatformData(UINT platform_id, LLA pos);
+
+        inline void setPlatformId(UINT id) { 
+            platform_id_ = id; 
+        }
+        inline UINT getPlatformId() {
+            return platform_id_;
+        }
+
+        inline void setPlatformPos(LLA pos) {
+            position_ = pos;
+        }
+        inline LLA getPlatformPos() {
+            return position_;
+        }
+
+
+    private:
+        UINT platform_id_;
+        LLA position_;
+    };
 }
 
 #endif

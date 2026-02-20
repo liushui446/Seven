@@ -63,7 +63,12 @@ namespace seven {
         double interval = 5.0;           // 队形节点间间隔（米）
         double collision_radius = 2.0;   // 避碰半径（米）
         //double switch_interval = 5.0;    // 队形切换间隔（秒）
-        double transition_alpha = 0.05;  // 位置过渡系数（越小越平滑）
+        double transition_alpha_base = 0.5; // 基础α值（近距时使用）
+        double transition_alpha_max = 0.02;  // 最大α值（远距时使用）
+        double far_dist_ratio = 0.35;          // 远距阈值：初始距离的80%
+        double transition_alpha = 0.02;  // 位置过渡系数（越小越平滑）0.05
+        double max_adjust_step = 0.1;     // 单次最大调整0.1米
+        int max_collision_iter = 100;   // 最大避碰迭代次数
         int fps = 30;                    // 帧率（用于时间换算）
         int max_frames = 1500;           // 最大运行帧数
         bool isInitial = false;          // 是否进行编队初始化
@@ -159,6 +164,7 @@ namespace seven {
         UAVTrajectory trajectory_;               // 轨迹数据
         std::vector<Point2D> current_positions_; // 当前位置
         std::vector<Point2D> target_positions_;  // 目标位置
+        std::vector<double> initial_distances_;   // 缓存每架无人机到匹配目标的初始距离
         //int current_formation_idx_ = 0;        // 当前队形索引
         Formation_Type current_formation;        // 当前队形
         int frame_count_ = 0;                    // 当前帧数
@@ -168,10 +174,20 @@ namespace seven {
          */
         std::vector<Point2D> generateFormation(const Formation_Type& formation_type);
 
+        //动态调整平缓指数
+        double calculateDynamicAlpha(int uav_idx, double current_dist);
+
+        /**
+         * @brief 匹配最近的目标位置
+         */
+        std::vector<int> matchClosestTarget();
+
         /**
         * @brief 碰撞检测与位置调整
         */
         std::vector<Point2D> checkCollision(const std::vector<Point2D>& positions);
+
+        std::vector<Point2D> checkCollision1(const std::vector<Point2D>& positions);
 
         /**
          * @brief 更新无人机位置（平滑过渡）
@@ -212,6 +228,8 @@ namespace seven {
          */
         std::vector<Point2D> getCurrentPositions() const;
 
+        void setCurrentPositions(vector<TrajectoryFrame> positions_);
+
         /**
          * @brief 队形类型转string
          */
@@ -222,6 +240,8 @@ namespace seven {
     void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);
 
     static UAVFormationParams formation_param_;
+    static vector<TrajectoryFrame> initial_trajectory;
+    static vector<TrajectoryFrame> end_trajectory;
 }
 
 #endif

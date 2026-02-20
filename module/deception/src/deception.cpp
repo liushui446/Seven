@@ -1,24 +1,24 @@
-#include "deception/deception.hpp"
+ï»¿#include "deception/deception.hpp"
 //#include "core/json.hpp"
 //
 //using namespace Json;
 #include <numeric>
 #include <cmath>
-#include <Eigen/Dense>  // ĞèEigen¿â´¦Àí¾ØÕóÔËËã£¨GDOP¼ÆËã£©
+#include <Eigen/Dense>  // éœ€Eigenåº“å¤„ç†çŸ©é˜µè¿ç®—ï¼ˆGDOPè®¡ç®—ï¼‰
 
 namespace seven {
 
-    // ½Ç¶È×ª»¡¶È
+    // è§’åº¦è½¬å¼§åº¦
     double GNSSDeceptionError::deg2rad(double deg) const {
         return deg * M_PI / 180.0;
     }
 
-    // »¡¶È×ª½Ç¶È
+    // å¼§åº¦è½¬è§’åº¦
     double GNSSDeceptionError::rad2deg(double rad) const {
         return rad * 180.0 / M_PI;
     }
 
-    // LLA×ªECEF(Ã×)
+    // LLAè½¬ECEF(ç±³)
     ECEF GNSSDeceptionError::lla_to_ecef(const LLA& lla) const {
         double lat_rad = deg2rad(lla.lat_deg);
         double lon_rad = deg2rad(lla.lon_deg);
@@ -34,7 +34,7 @@ namespace seven {
         return ecef;
     }
 
-    // ECEF×ªLLA
+    // ECEFè½¬LLA
     LLA GNSSDeceptionError::ecef_to_lla(const ECEF& ecef) const {
         double x = ecef.X;
         double y = ecef.Y;
@@ -47,7 +47,7 @@ namespace seven {
         double p = sqrt(x * x + y * y);
         LLA lla;
 
-        // ´¦Àí¼«ÇøÇé¿ö
+        // å¤„ç†æåŒºæƒ…å†µ
         if (p < 1e-12) {
             lla.lon_deg = 0.0;
             lla.lat_deg = rad2deg(M_PI / 2 * (z >= 0 ? 1 : -1));
@@ -70,7 +70,7 @@ namespace seven {
         return lla;
     }
 
-    // ¼ÆËãÁ½µã¼äECEF¾àÀë(Ã×)
+    // è®¡ç®—ä¸¤ç‚¹é—´ECEFè·ç¦»(ç±³)
     double GNSSDeceptionError::calc_ecef_distance(const ECEF& p1, const ECEF& p2) const {
         double dx = p1.X - p2.X;
         double dy = p1.Y - p2.Y;
@@ -78,9 +78,9 @@ namespace seven {
         return sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    // É¸Ñ¡GDOP×îÓÅµÄ4¿ÅÎÀĞÇ
+    // ç­›é€‰GDOPæœ€ä¼˜çš„4é¢—å«æ˜Ÿ
     std::vector<LLA> GNSSDeceptionError::select_optimal_satellites(const LLA& target_pos) const {
-        // ×ª»»Ä¿±êµ½ECEF
+        // è½¬æ¢ç›®æ ‡åˆ°ECEF
         ECEF target_ecef = lla_to_ecef(target_pos);
         std::vector<ECEF> sat_ecef_list;
         for (const auto& sat : params.satellite_pos) {
@@ -88,9 +88,9 @@ namespace seven {
         }
 
         double min_gdop = INFINITY;
-        std::vector<int> best_idx = { 0, 1, 2, 3 };  // Ä¬ÈÏÇ°4¿Å
+        std::vector<int> best_idx = { 0, 1, 2, 3 };  // é»˜è®¤å‰4é¢—
 
-        // Éú³ÉËùÓĞ4¿ÅÎÀĞÇ×éºÏ(¼ò»¯ÊµÏÖ£º½ö±éÀúÇ°10Ñ¡4£¬Êµ¼Ê¿ÉÓÅ»¯)
+        // ç”Ÿæˆæ‰€æœ‰4é¢—å«æ˜Ÿç»„åˆ(ç®€åŒ–å®ç°ï¼šä»…éå†å‰10é€‰4ï¼Œå®é™…å¯ä¼˜åŒ–)
         std::vector<int> indices(params.satellite_pos.size());
         std::iota(indices.begin(), indices.end(), 0);
         std::vector<bool> mask(indices.size(), false);
@@ -103,7 +103,7 @@ namespace seven {
             }
             if (combo.size() != 4) continue;
 
-            // ¹¹½¨¼¸ºÎ¾ØÕóG
+            // æ„å»ºå‡ ä½•çŸ©é˜µG
             Eigen::MatrixXd G(4, 4);
             bool valid = true;
             for (int i = 0; i < 4; ++i) {
@@ -126,9 +126,9 @@ namespace seven {
 
             if (!valid) continue;
 
-            // ¼ÆËãGDOP
+            // è®¡ç®—GDOP
             Eigen::MatrixXd A = G.transpose() * G;
-            //if (A.conditionNumber() > 1e12) continue;  // Ìõ¼şÊı¹ı´ó
+            //if (A.conditionNumber() > 1e12) continue;  // æ¡ä»¶æ•°è¿‡å¤§
 
             try {
                 Eigen::MatrixXd A_inv = A.inverse();
@@ -143,7 +143,7 @@ namespace seven {
             }
         } while (std::next_permutation(mask.begin(), mask.end()));
 
-        // ÌáÈ¡×îÓÅÎÀĞÇ
+        // æå–æœ€ä¼˜å«æ˜Ÿ
         std::vector<LLA> optimal_sats;
         for (int idx : best_idx) {
             optimal_sats.push_back(params.satellite_pos[idx]);
@@ -151,7 +151,7 @@ namespace seven {
         return optimal_sats;
     }
 
-    // ¼ÆËãĞÅºÅÏà¶Ô¹¦ÂÊ
+    // è®¡ç®—ä¿¡å·ç›¸å¯¹åŠŸç‡
     double GNSSDeceptionError::calc_signal_power(const LLA& trans_pos, const LLA& recv_pos) const {
         ECEF trans_ecef = lla_to_ecef(trans_pos);
         ECEF recv_ecef = lla_to_ecef(recv_pos);
@@ -159,21 +159,21 @@ namespace seven {
 
         if (dist < 1e-6) return 0.0;
 
-        // ×ÔÓÉ¿Õ¼äËğºÄ¹«Ê½
+        // è‡ªç”±ç©ºé—´æŸè€—å…¬å¼
         double loss = pow(4 * M_PI * dist * FREQ / C_LIGHT, 2);
         return 1.0 / loss;
     }
 
-    // ÅĞ¶ÏÆÛÆ­ĞÅºÅÊÇ·ñÓĞĞ§
+    // åˆ¤æ–­æ¬ºéª—ä¿¡å·æ˜¯å¦æœ‰æ•ˆ
     bool GNSSDeceptionError::is_deception_valid(const LLA& target_pos, const std::vector<LLA>& satellite_pos) const {
-        // ¼ÆËãÕæÊµÎÀĞÇÆ½¾ù¹¦ÂÊ
+        // è®¡ç®—çœŸå®å«æ˜Ÿå¹³å‡åŠŸç‡
         double real_power_sum = 0.0;
         for (const auto& sat : satellite_pos) {
             real_power_sum += calc_signal_power(sat, target_pos);
         }
         double real_power = real_power_sum / satellite_pos.size();
 
-        // ¼ÆËãÆÛÆ­ĞÅºÅÆ½¾ù¹¦ÂÊ
+        // è®¡ç®—æ¬ºéª—ä¿¡å·å¹³å‡åŠŸç‡
         double deception_power_sum = 0.0;
         for (const auto& jammer : params.jammer_pos) {
             deception_power_sum += calc_signal_power(jammer, target_pos);
@@ -182,12 +182,12 @@ namespace seven {
 
         //if (real_power < 1e-12) return false;
 
-        // ¹¦ÂÊ±È×ªdB
+        // åŠŸç‡æ¯”è½¬dB
         double power_ratio_dB = 10 * log10(deception_power / real_power);
         return power_ratio_dB > params.power_ratio_threshold;
     }
 
-    // ¼ÆËãÆÛÆ­Ê±ÑÓ
+    // è®¡ç®—æ¬ºéª—æ—¶å»¶
     std::vector<double> GNSSDeceptionError::calculate_deception_delay(const LLA& target_pos,
         const std::vector<LLA>& satellite_pos) const {
         ECEF deception_ecef = lla_to_ecef(params.deception_pos);
@@ -206,7 +206,7 @@ namespace seven {
             delays.push_back(tau);
         }
 
-        // Ê±ÑÓĞŞÕı£ºÈ·±£·Ç¸º
+        // æ—¶å»¶ä¿®æ­£ï¼šç¡®ä¿éè´Ÿ
         double min_tau = *std::min_element(delays.begin(), delays.end());
         if (min_tau < 0) {
             for (auto& tau : delays) {
@@ -217,14 +217,14 @@ namespace seven {
         return delays;
     }
 
-    // Çó½â¶¨Î»Îó²î
+    // æ±‚è§£å®šä½è¯¯å·®
     LLA GNSSDeceptionError::solve_position_error(const std::vector<LLA>& satellite_pos,
         const LLA& target_pos,
         const std::vector<double>& delays) const {
         ECEF target_ecef = lla_to_ecef(target_pos);
         int n = params.jammer_num;
 
-        // ¹¹½¨¹Û²â¾ØÕóM
+        // æ„å»ºè§‚æµ‹çŸ©é˜µM
         Eigen::MatrixXd M(n, 4);
         std::vector<double> R_SR_list;
 
@@ -250,13 +250,13 @@ namespace seven {
             M(i, 3) = 1.0;
         }
 
-        // ¹¹½¨Ê±ÑÓÏòÁ¿T
+        // æ„å»ºæ—¶å»¶å‘é‡T
         Eigen::VectorXd T(n);
         for (int i = 0; i < n; ++i) {
             T(i) = delays[i];
         }
 
-        // ¹¹½¨ĞŞÕıÏòÁ¿A
+        // æ„å»ºä¿®æ­£å‘é‡A
         Eigen::VectorXd A(n);
         for (int i = 0; i < n; ++i) {
             ECEF sat_ecef = lla_to_ecef(satellite_pos[i]);
@@ -269,7 +269,7 @@ namespace seven {
             A(i) = (R_SJ + R_JR - R_SR) / C_LIGHT;
         }
 
-        // ×îĞ¡¶ş³ËÇó½â
+        // æœ€å°äºŒä¹˜æ±‚è§£
         try {
             Eigen::MatrixXd MtM = M.transpose() * M;
             /*if (MtM.conditionNumber() > 1e12) {
@@ -279,13 +279,13 @@ namespace seven {
             Eigen::MatrixXd MtM_inv = MtM.inverse();
             Eigen::VectorXd delta_X = MtM_inv * M.transpose() * (T + A);
 
-            // ÌáÈ¡Î»ÖÃÎó²î(Ã×)
+            // æå–ä½ç½®è¯¯å·®(ç±³)
             ECEF error_ecef;
             error_ecef.X = delta_X(0);
             error_ecef.Y = delta_X(1);
             error_ecef.Z = delta_X(2);
 
-            // ¼ÆËãÊÜ¸ÉÈÅºóµÄÎ»ÖÃ
+            // è®¡ç®—å—å¹²æ‰°åçš„ä½ç½®
             ECEF new_target_ecef;
             new_target_ecef.X = target_ecef.X + error_ecef.X;
             new_target_ecef.Y = target_ecef.Y + error_ecef.Y;
@@ -293,7 +293,7 @@ namespace seven {
 
             LLA new_target_lla = ecef_to_lla(new_target_ecef);
 
-            // ¼ÆËãÎó²î
+            // è®¡ç®—è¯¯å·®
             LLA pos_error;
             pos_error.lon_deg = new_target_lla.lon_deg - target_pos.lon_deg;
             pos_error.lat_deg = new_target_lla.lat_deg - target_pos.lat_deg;
@@ -306,21 +306,21 @@ namespace seven {
         }
     }
 
-    // ÉèÖÃ×Ô¶¨Òå²ÎÊı
+    // è®¾ç½®è‡ªå®šä¹‰å‚æ•°
     void GNSSDeceptionError::set_params(const SimParams& custom_params) {
         params = custom_params;
     }
 
-    // ºËĞÄ¼ÆËã½Ó¿Ú£ºÊäÈëº½¼£µã£¬Êä³öÎó²î½á¹û
+    // æ ¸å¿ƒè®¡ç®—æ¥å£ï¼šè¾“å…¥èˆªè¿¹ç‚¹ï¼Œè¾“å‡ºè¯¯å·®ç»“æœ
     TrackResult GNSSDeceptionError::calculate_error(const LLA& target_pos) {
         TrackResult result;
         result.target_pos = target_pos;
         result.deception_valid = false;
 
-        // 1. É¸Ñ¡×îÓÅÎÀĞÇ
+        // 1. ç­›é€‰æœ€ä¼˜å«æ˜Ÿ
         std::vector<LLA> optimal_sats = select_optimal_satellites(target_pos);
 
-        // 2. ÅĞ¶¨ÆÛÆ­ÓĞĞ§ĞÔ
+        // 2. åˆ¤å®šæ¬ºéª—æœ‰æ•ˆæ€§
         if (!is_deception_valid(target_pos, optimal_sats)) {
             result.error_pos = target_pos;
             result.pos_error = { 0.0, 0.0, 0.0 };
@@ -328,13 +328,13 @@ namespace seven {
         }
         result.deception_valid = true;
 
-        // 3. ¼ÆËãÆÛÆ­Ê±ÑÓ
+        // 3. è®¡ç®—æ¬ºéª—æ—¶å»¶
         std::vector<double> delays = calculate_deception_delay(target_pos, optimal_sats);
 
-        // 4. Çó½â¶¨Î»Îó²î
+        // 4. æ±‚è§£å®šä½è¯¯å·®
         result.pos_error = solve_position_error(optimal_sats, target_pos, delays);
 
-        // 5. ¼ÆËãÊÜ¸ÉÈÅºóµÄÎ»ÖÃ
+        // 5. è®¡ç®—å—å¹²æ‰°åçš„ä½ç½®
         result.error_pos.lon_deg = target_pos.lon_deg - result.pos_error.lon_deg;
         result.error_pos.lat_deg = target_pos.lat_deg - result.pos_error.lat_deg;
         result.error_pos.h_m = target_pos.h_m - result.pos_error.h_m;
@@ -342,7 +342,7 @@ namespace seven {
         return result;
     }
 
-    // ÅúÁ¿´¦Àíº½¼£Êı¾İ
+    // æ‰¹é‡å¤„ç†èˆªè¿¹æ•°æ®
     std::vector<TrackResult> GNSSDeceptionError::batch_calculate(const std::vector<LLA>& track_points) {
         std::vector<TrackResult> results;
         for (const auto& point : track_points) {
@@ -352,43 +352,54 @@ namespace seven {
     }
 
 
-    // Ê¾ÀıÊ¹ÓÃ
+    // ç¤ºä¾‹ä½¿ç”¨
     int Deception_Test(Json::Value input, Json::Value& trajectory_result) {
         
-        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
 
-        // 1. ´´½¨¼ÆËãÊµÀı
+        // è‹¥å­˜åœ¨"jammer_num"åˆ™å–å…¶æ•´æ•°å€¼ï¼Œä¸å­˜åœ¨åˆ™è¿”å›é»˜è®¤å€¼0ï¼ˆå¯è‡ªå®šä¹‰ï¼‰
+        int jammer_num = input.get("jammer_num", 1).asInt();
+
+        // 1. åˆ›å»ºè®¡ç®—å®ä¾‹
         GNSSDeceptionError gnss_error;
 
-        // 2. (¿ÉÑ¡)×Ô¶¨Òå²ÎÊı
+        // 2. (å¯é€‰)è‡ªå®šä¹‰å‚æ•°
         SimParams custom_params;
-        //custom_params.deception_pos = {115.32, 29.15, 1.5};  // ĞŞ¸ÄÆÛÆ­µã
+        custom_params.jammer_num = jammer_num;
+        //å¹²æ‰°æºæ·»åŠ 
+        for (int i = 0; i < jammer_num; i++)
+        {
+            LLA lla_jam_pos;
+            custom_params.jammer_pos.push_back(lla_jam_pos);
+        }
+
+        //custom_params.deception_pos = {115.32, 29.15, 1.5};  // ä¿®æ”¹æ¬ºéª—ç‚¹
         //gnss_error.set_params(custom_params);
 
         if (jammer_strength == Jammer_Level::High)
         {
-            custom_params.deception_pos = { 115.32, 29.33, 0.5 };  // ĞŞ¸ÄÆÛÆ­µã
+            custom_params.deception_pos = { 115.32, 29.33, 0.5 };  // ä¿®æ”¹æ¬ºéª—ç‚¹
             gnss_error.set_params(custom_params);
         }
         else if (jammer_strength == Jammer_Level::Middle)
         {
-            custom_params.deception_pos = { 115.32, 29.23, 0.5 };  // ĞŞ¸ÄÆÛÆ­µã
+            custom_params.deception_pos = { 115.32, 29.23, 0.5 };  // ä¿®æ”¹æ¬ºéª—ç‚¹
             gnss_error.set_params(custom_params);
         }
         else if (jammer_strength == Jammer_Level::Low)
         {
-            custom_params.deception_pos = { 115.32, 29.15, 0.5 };  // ĞŞ¸ÄÆÛÆ­µã
+            custom_params.deception_pos = { 115.32, 29.15, 0.5 };  // ä¿®æ”¹æ¬ºéª—ç‚¹
             gnss_error.set_params(custom_params);
         }
 
-        // 3. ÊäÈëº½¼£Êı¾İ
+        // 3. è¾“å…¥èˆªè¿¹æ•°æ®
         std::vector<LLA> track_points = {
             {115.193, 29.027, 1},
         };
 
         LLA target_velocity = { 0.001, 0.0005, 0 };
 
-        UINT sim_time = 100;  // ·ÂÕæÊ±³¤(s)200
+        UINT sim_time = 100;  // ä»¿çœŸæ—¶é•¿(s)200
 
         LLA inital_pos = track_points[0];
         for (int step = 0; step < sim_time; step++)
@@ -398,40 +409,58 @@ namespace seven {
             track_points.push_back(target_pos);
         }
 
-        // 4. ÅúÁ¿¼ÆËã
+        // 4. æ‰¹é‡è®¡ç®—
         std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
-        // 5. Çå¿Õ²¢Ğ´Èëº½¼£µãÊı×é£¨ºËĞÄ£º¶Ô½ÓÆÛÆ­Ê½¸ÉÈÅµÄ½á¹û×Ö¶Î£©
-        trajectory_result.clear(); // ¿ÉÑ¡£¬¸´ÓÃ¶ÔÏóÊ±½¨Òé±£Áô
-        Json::Value& track_points_json = trajectory_result["track_points"]; // º½¼£µãÊı×éÒıÓÃ£¬¼ò»¯ÊéĞ´
+        // 5. æ¸…ç©ºå¹¶å†™å…¥èˆªè¿¹ç‚¹æ•°ç»„ï¼ˆæ ¸å¿ƒï¼šå¯¹æ¥æ¬ºéª—å¼å¹²æ‰°çš„ç»“æœå­—æ®µï¼‰
+        trajectory_result.clear(); // å¯é€‰ï¼Œå¤ç”¨å¯¹è±¡æ—¶å»ºè®®ä¿ç•™
+        //å¹²æ‰°ç‚¹ä¿¡æ¯
+        Json::Value& jammer_list = trajectory_result["jammer_list"];
+        for (int cnt = 0; cnt < custom_params.jammer_pos.size(); cnt++)
+        {
+            Json::Value jammer_mes;
+            jammer_mes["id"] = cnt + 1;
+            jammer_mes["pos_lla"]["lon_deg"] = custom_params.jammer_pos[cnt].lon_deg;
+            jammer_mes["pos_lla"]["lat_deg"] = custom_params.jammer_pos[cnt].lat_deg;
+            jammer_mes["pos_lla"]["h_m"] = custom_params.jammer_pos[cnt].h_m * 1000;      //km->m
+
+            /*ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
+            jammer_centre.X = tmp_pos.X;
+            jammer_centre.Y = tmp_pos.Y;
+            jammer_centre.Z = tmp_pos.Z;*/
+
+            jammer_list.append(jammer_mes);
+        }
+
+        Json::Value& track_points_json = trajectory_result["track_points"]; // èˆªè¿¹ç‚¹æ•°ç»„å¼•ç”¨ï¼Œç®€åŒ–ä¹¦å†™
 
         for (size_t i = 0; i < results.size(); ++i) {
-            const auto& res = results[i]; // ¸´ÓÃÔ­´úÂëµÄ³£Á¿ÒıÓÃ£¬±ÜÃâ¿½±´
-            Json::Value track_point;      // µ¥¸öº½¼£µãµÄJSON¶ÔÏó
+            const auto& res = results[i]; // å¤ç”¨åŸä»£ç çš„å¸¸é‡å¼•ç”¨ï¼Œé¿å…æ‹·è´
+            Json::Value track_point;      // å•ä¸ªèˆªè¿¹ç‚¹çš„JSONå¯¹è±¡
 
-            // »ù´¡×Ö¶Î£ºº½¼£µãĞòºÅ£¨ºÍÔ­´òÓ¡Ò»ÖÂ£¬i+1£©
-            track_point["index"] = static_cast<int>(i + 1); // size_t×ªint£¬ÊÊÅäJsonCpp
+            // åŸºç¡€å­—æ®µï¼šèˆªè¿¹ç‚¹åºå·ï¼ˆå’ŒåŸæ‰“å°ä¸€è‡´ï¼Œi+1ï¼‰
+            track_point["index"] = static_cast<int>(i + 1); // size_tè½¬intï¼Œé€‚é…JsonCpp
 
-            // Ä¿±êÎ»ÖÃ£¨¾­Î³¶È¸ß£¬¡ã/¡ã/m£¬ĞŞÕıÔ­km±ê×¢£¬ÌùºÏh_m±äÁ¿¶¨Òå£©
-            track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // ¾­¶È(¡ã)
-            track_point["target_pos"]["lat_deg"] = res.target_pos.lat_deg; // Î³¶È(¡ã)
-            track_point["target_pos"]["h_m"] = res.target_pos.h_m;         // ¸ß¶È(m)£¬Ô­Ê¼µ¥Î»
+            // ç›®æ ‡ä½ç½®ï¼ˆç»çº¬åº¦é«˜ï¼ŒÂ°/Â°/mï¼Œä¿®æ­£åŸkmæ ‡æ³¨ï¼Œè´´åˆh_må˜é‡å®šä¹‰ï¼‰
+            track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // ç»åº¦(Â°)
+            track_point["target_pos"]["lat_deg"] = res.target_pos.lat_deg; // çº¬åº¦(Â°)
+            track_point["target_pos"]["h_m"] = res.target_pos.h_m;         // é«˜åº¦(m)ï¼ŒåŸå§‹å•ä½
 
-            // ÊÜ¸ÉÈÅÎ»ÖÃ£¨¾­Î³¶È¸ß£¬¡ã/¡ã/m£¬ĞŞÕıÔ­km±ê×¢£¬ÌùºÏh_m±äÁ¿¶¨Òå£©
-            track_point["error_pos"]["lon_deg"] = res.error_pos.lon_deg; // ¾­¶È(¡ã)
-            track_point["error_pos"]["lat_deg"] = res.error_pos.lat_deg; // Î³¶È(¡ã)
-            track_point["error_pos"]["h_m"] = res.error_pos.h_m;         // ¸ß¶È(m)£¬Ô­Ê¼µ¥Î»
+            // å—å¹²æ‰°ä½ç½®ï¼ˆç»çº¬åº¦é«˜ï¼ŒÂ°/Â°/mï¼Œä¿®æ­£åŸkmæ ‡æ³¨ï¼Œè´´åˆh_må˜é‡å®šä¹‰ï¼‰
+            track_point["error_pos"]["lon_deg"] = res.error_pos.lon_deg; // ç»åº¦(Â°)
+            track_point["error_pos"]["lat_deg"] = res.error_pos.lat_deg; // çº¬åº¦(Â°)
+            track_point["error_pos"]["h_m"] = res.error_pos.h_m;         // é«˜åº¦(m)ï¼ŒåŸå§‹å•ä½
 
-            // ÆÛÆ­ÓĞĞ§±êÖ¾£º²¼¶ûÖµ+×Ö·û´®£¬¼æ¹Ë³ÌĞò½âÎöºÍÈË¹¤²é¿´£¨ºÍÔ­´òÓ¡Ò»ÖÂ£©
-            track_point["deception_valid_bool"] = res.deception_valid; // ²¼¶ûÖµ£¨ÍÆ¼ö£¬½âÎöÓÑºÃ£©
+            // æ¬ºéª—æœ‰æ•ˆæ ‡å¿—ï¼šå¸ƒå°”å€¼+å­—ç¬¦ä¸²ï¼Œå…¼é¡¾ç¨‹åºè§£æå’Œäººå·¥æŸ¥çœ‹ï¼ˆå’ŒåŸæ‰“å°ä¸€è‡´ï¼‰
+            track_point["deception_valid_bool"] = res.deception_valid; // å¸ƒå°”å€¼ï¼ˆæ¨èï¼Œè§£æå‹å¥½ï¼‰
 
-            // ¶¨Î»Îó²î£¨¾­Î³¶È¸ß£¬¡ã/¡ã/m£¬Í¬Ä¿±êÎ»ÖÃµÄµ¥Î»¹æ·¶£©
-            track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // ¾­¶ÈÎó²î(¡ã)
-            track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // Î³¶ÈÎó²î(¡ã)
-            track_point["pos_error"]["h_m"] = res.pos_error.h_m;         // ¸ß¶ÈÎó²î(m)£¬Ô­Ê¼µ¥Î»
-            // ¿ÉÑ¡£º¸ß¶ÈÎó²î×ªÇ§Ã×£¬ĞÂÔöh_m×Ö¶Î
+            // å®šä½è¯¯å·®ï¼ˆç»çº¬åº¦é«˜ï¼ŒÂ°/Â°/mï¼ŒåŒç›®æ ‡ä½ç½®çš„å•ä½è§„èŒƒï¼‰
+            track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // ç»åº¦è¯¯å·®(Â°)
+            track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // çº¬åº¦è¯¯å·®(Â°)
+            track_point["pos_error"]["h_m"] = res.pos_error.h_m;         // é«˜åº¦è¯¯å·®(m)ï¼ŒåŸå§‹å•ä½
+            // å¯é€‰ï¼šé«˜åº¦è¯¯å·®è½¬åƒç±³ï¼Œæ–°å¢h_må­—æ®µ
 
-            // ½«µ±Ç°º½¼£µã¼ÓÈëÊı×é
+            // å°†å½“å‰èˆªè¿¹ç‚¹åŠ å…¥æ•°ç»„
             track_points_json.append(track_point);
         }
 
