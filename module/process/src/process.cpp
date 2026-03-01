@@ -2,6 +2,7 @@
 #include "transformation/transformation.hpp"
 #include "barrage/barrage.hpp"
 #include "deception/deception.hpp"
+#include "process/SimManager.hpp"
 
 #include <thread>
 #include <chrono>
@@ -81,25 +82,47 @@ namespace seven {
      */
     void parser_cmd(Json::Value param, Json::Value& result)
     {
-        Cmd_Type type = static_cast<Cmd_Type>(param["cmd"].asInt());
-        if (type == Cmd_Type::Barrage)
-        {
-            Barrage_Test(param, result);
-        }
-        else if (type == Cmd_Type::Deception)
-        {
-            Deception_Test(param, result);
-        }
-        else if (type == Cmd_Type::Transformation)
-        {
-            Transformation_Test(param, result);
-        }
-        else
-        {
+        //Cmd_Type type = static_cast<Cmd_Type>(param["cmd"].asInt());
+        //if (type == Cmd_Type::Barrage)
+        //{
+        //    Barrage_Test(param, result);
+        //}
+        //else if (type == Cmd_Type::Deception)
+        //{
+        //    Deception_Test(param, result);
+        //}
+        //else if (type == Cmd_Type::Transformation)
+        //{
+        //    Transformation_Test(param, result);
+        //}
+        //else
+        //{
+        //    result["status"] = "error";  // 字符串值
+        //    result["message"] = std::string("parser command fail：");  // 拼接字符串
+        //    result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
+        //}
+
+        // ============== 2.28新增 仿真开始 停止 =============//
+        if (param.get("cmd", 4).asInt() == 4) {
             result["status"] = "error";  // 字符串值
             result["message"] = std::string("parser command fail：");  // 拼接字符串
             result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
+            return;
         }
+        Sim_Type sim_state = static_cast<Sim_Type>(param.get("sim_type", 1).asInt());
+        if (sim_state == Sim_Type::STOPPED)
+        {
+            g_sim_manager.sim_stop(result);
+        }
+        else if (sim_state == Sim_Type::STARTTED)
+        {
+            g_sim_manager.sim_start(param, result);
+        }
+        else if (sim_state == Sim_Type::RUNNING)
+        {
+            g_sim_manager.sim_calc(param, result);
+        }
+
     }
 
     // 管道服务端：处理单个客户端连接

@@ -2,6 +2,7 @@
 #define PROCESS_HPP
 
 #include "core/CommonCore.hpp"
+//#include "process/SimManager.hpp"
 //#include "json/json.h"
 #include <windows.h>
 
@@ -18,6 +19,7 @@ namespace seven {
 	void handle_client(HANDLE hPipe);
 
 	void SEVEN_EXPORTS start_pipe_server();
+
 }
 
 #endif

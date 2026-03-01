@@ -104,7 +104,9 @@ namespace seven {
     };
 
     int SEVEN_EXPORTS Deception_Test(Json::Value input, Json::Value& trajectory_result);
+    int SEVEN_EXPORTS Deception_Use(Json::Value input, Json::Value& trajectory_result);
     
+    static SimParams deception_config;
 }
 
 #endif

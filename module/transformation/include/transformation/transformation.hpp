@@ -238,6 +238,7 @@ namespace seven {
     };
 
     void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);
+    void SEVEN_EXPORTS Init_formation(Json::Value& trajectory_result);
 
     static UAVFormationParams formation_param_;
     static vector<TrajectoryFrame> initial_trajectory;

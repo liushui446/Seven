@@ -71,6 +71,13 @@ namespace seven
         Transformation = 3       // 编队
     };
 
+    enum class Sim_Type
+    {
+        STOPPED = 1,  // 仿真已停止
+        STARTTED = 2,  // 仿真开始
+        RUNNING = 3  // 仿真运行中
+    };
+
     enum class Jammer_Level
     {
         Low = 1,                // 弱
@@ -202,6 +209,19 @@ namespace seven
     private:
         UINT platform_id_;
         LLA position_;
+    };
+
+    // 新增：干扰范围计算结果结构体
+    struct JammerRangeResult {
+        int jammer_id;               // 干扰源ID
+        double jammer_radius;        // 干扰半径(米)
+        ECEF jammer_centre;          // 干扰源中心(ECEF)
+        ECEF jammer_start_point;     // 干扰开始点
+        ECEF jammer_end_point;       // 干扰结束点
+        LLA jammer_centre_lla;       // 干扰源中心(LLA)
+        LLA jammer_start_lla;        // 干扰开始点(LLA)
+        LLA jammer_end_lla;          // 干扰结束点(LLA)
+        UINT platform_id;            // 对应航迹平台ID
     };
 }
 
