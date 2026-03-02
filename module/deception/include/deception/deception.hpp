@@ -20,6 +20,8 @@ namespace seven {
             {115.4, 29.0, 1.0}
         };
 
+        UINT return_frames = 100;  // 返回结果数据帧数
+
         // 欺骗点位置
         LLA deception_pos = { 115.32, 29.15, 0.5 };
 

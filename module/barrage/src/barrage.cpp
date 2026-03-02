@@ -5,7 +5,6 @@
 #include <numeric>      // 数值计算
 
 
-
 namespace seven {
 
     // ========================= 2. 核心算法类封装 =========================
@@ -519,77 +518,75 @@ namespace seven {
             Json::Value& track_results = platform_result["track_results"];
 
             // ========== 核心：计算每个干扰源的失锁范围半径 ==========
-            for (int jammer_idx = 0; jammer_idx < barrage_config.jammers.size(); jammer_idx++) {
-                JammerRangeResult range_result;
-                range_result.jammer_id = jammer_idx + 1;          // 干扰源ID（从1开始）
-                range_result.platform_id = platform_id;           // 对应平台ID
-                range_result.jammer_centre = sim.lla_to_ecef(barrage_config.jammers[jammer_idx].pos); // 干扰源ECEF坐标
-                range_result.jammer_centre_lla = barrage_config.jammers[jammer_idx].pos;             // 干扰源LLA坐标
+            JammerRangeResult range_result;
+            range_result.jammer_id = plat_idx + 1;          // 干扰源ID（从1开始）
+            range_result.platform_id = platform_id;           // 对应平台ID
+            range_result.jammer_centre = sim.lla_to_ecef(barrage_config.jammers[plat_idx].pos); // 干扰源ECEF坐标
+            range_result.jammer_centre_lla = barrage_config.jammers[plat_idx].pos;             // 干扰源LLA坐标
 
-                // 关键变量：失锁开始/结束位置、距离
-                ECEF unlock_start_pos, unlock_end_pos;
-                double dist_start = 0.0, dist_end = 0.0, avg_dist = 0.0;
-                bool unlock_start_found = false, unlock_end_found = false;
+            // 关键变量：失锁开始/结束位置、距离
+            ECEF unlock_start_pos, unlock_end_pos;
+            double dist_start = 0.0, dist_end = 0.0, avg_dist = 0.0;
+            bool unlock_start_found = false, unlock_end_found = false;
 
-                // 遍历航迹点，定位失锁的起始和结束位置
-                bool last_unlock = false;
-                for (int i = 0; i < results.size(); ++i) {
-                    bool cur_unlock = results[i].unlock_flag;
+            // 遍历航迹点，定位失锁的起始和结束位置
+            bool last_unlock = false;
+            for (int i = 0; i < results.size(); ++i) {
+                bool cur_unlock = results[i].unlock_flag;
 
-                    // 1. 检测失锁开始：从"未失锁"变为"失锁"
-                    if (!last_unlock && cur_unlock && !unlock_start_found) {
-                        unlock_start_pos = sim.lla_to_ecef(track_points[i]); // 初始失锁位置
-                        unlock_start_found = true;
-                        // 计算初始失锁位置到干扰源的距离
-                        dist_start = sqrt(
-                            pow(range_result.jammer_centre.X - unlock_start_pos.X, 2) +
-                            pow(range_result.jammer_centre.Y - unlock_start_pos.Y, 2) +
-                            pow(range_result.jammer_centre.Z - unlock_start_pos.Z, 2)
-                        );
-                    }
-
-                    // 2. 检测失锁结束：从"失锁"变为"未失锁"（且已找到开始位置）
-                    if (last_unlock && !cur_unlock && unlock_start_found && !unlock_end_found) {
-                        unlock_end_pos = sim.lla_to_ecef(track_points[i - 1]); // 最终失锁位置（取前一个点）
-                        unlock_end_found = true;
-                        // 计算最终失锁位置到干扰源的距离
-                        dist_end = sqrt(
-                            pow(range_result.jammer_centre.X - unlock_end_pos.X, 2) +
-                            pow(range_result.jammer_centre.Y - unlock_end_pos.Y, 2) +
-                            pow(range_result.jammer_centre.Z - unlock_end_pos.Z, 2)
-                        );
-                        // 计算平均距离（失锁范围半径）
-                        avg_dist = (dist_start + dist_end) / 2.0;
-                        break; // 找到结束点后退出遍历
-                    }
-
-                    last_unlock = cur_unlock;
+                // 1. 检测失锁开始：从"未失锁"变为"失锁"
+                if (!last_unlock && cur_unlock && !unlock_start_found) {
+                    unlock_start_pos = sim.lla_to_ecef(track_points[i]); // 初始失锁位置
+                    unlock_start_found = true;
+                    // 计算初始失锁位置到干扰源的距离
+                    dist_start = sqrt(
+                        pow(range_result.jammer_centre.X - unlock_start_pos.X, 2) +
+                        pow(range_result.jammer_centre.Y - unlock_start_pos.Y, 2) +
+                        pow(range_result.jammer_centre.Z - unlock_start_pos.Z, 2)
+                    );
                 }
 
-                // 特殊情况：全程失锁（只找到开始点，未找到结束点）
-                if (unlock_start_found && !unlock_end_found) {
-                    unlock_end_pos = sim.lla_to_ecef(track_points.back()); // 取最后一个航迹点作为结束点
+                // 2. 检测失锁结束：从"失锁"变为"未失锁"（且已找到开始位置）
+                if (last_unlock && !cur_unlock && unlock_start_found && !unlock_end_found) {
+                    unlock_end_pos = sim.lla_to_ecef(track_points[i - 1]); // 最终失锁位置（取前一个点）
+                    unlock_end_found = true;
+                    // 计算最终失锁位置到干扰源的距离
                     dist_end = sqrt(
                         pow(range_result.jammer_centre.X - unlock_end_pos.X, 2) +
                         pow(range_result.jammer_centre.Y - unlock_end_pos.Y, 2) +
                         pow(range_result.jammer_centre.Z - unlock_end_pos.Z, 2)
                     );
+                    // 计算平均距离（失锁范围半径）
                     avg_dist = (dist_start + dist_end) / 2.0;
+                    break; // 找到结束点后退出遍历
                 }
 
-                // 填充干扰范围结果（仅保留核心字段）
-                range_result.jammer_radius = avg_dist;                  // 失锁范围半径（核心输出）
-                range_result.jammer_start_point = unlock_start_pos;     // 初始失锁位置
-                range_result.jammer_end_point = unlock_end_pos;         // 最终失锁位置
-                range_result.jammer_start_lla = sim.ecef_to_lla(unlock_start_pos);
-                range_result.jammer_end_lla = sim.ecef_to_lla(unlock_end_pos);
-
-                jammer_range.push_back(range_result); // 存入结果列表
+                last_unlock = cur_unlock;
             }
+
+            // 特殊情况：全程失锁（只找到开始点，未找到结束点）
+            if (unlock_start_found && !unlock_end_found) {
+                unlock_end_pos = sim.lla_to_ecef(track_points.back()); // 取最后一个航迹点作为结束点
+                dist_end = sqrt(
+                    pow(range_result.jammer_centre.X - unlock_end_pos.X, 2) +
+                    pow(range_result.jammer_centre.Y - unlock_end_pos.Y, 2) +
+                    pow(range_result.jammer_centre.Z - unlock_end_pos.Z, 2)
+                );
+                avg_dist = (dist_start + dist_end) / 2.0;
+            }
+
+            // 填充干扰范围结果（仅保留核心字段）
+            range_result.jammer_radius = avg_dist;                  // 失锁范围半径（核心输出）
+            range_result.jammer_start_point = unlock_start_pos;     // 初始失锁位置
+            range_result.jammer_end_point = unlock_end_pos;         // 最终失锁位置
+            range_result.jammer_start_lla = sim.ecef_to_lla(unlock_start_pos);
+            range_result.jammer_end_lla = sim.ecef_to_lla(unlock_end_pos);
+
+            jammer_range.push_back(range_result); // 存入结果列表
         }
     }
 
-    void GNSSJammerSim::calc_jammer_area(SimConfig barrage_config, vector<JammerRangeResult>& jammer_range)
+    void GNSSJammerSim::calc_jammer_area(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range)
     {
         // ---------- 4.1 自动生成航迹（每个干扰源对应一条航迹） ----------
         Json::Value auto_platform_tracks(Json::arrayValue);
@@ -817,20 +814,6 @@ namespace seven {
 
     int Barrage_Test_1(Json::Value input, Json::Value& trajectory_result) {
 
-        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
-
-        // 若存在"jammer_num"则取其整数值，不存在则返回默认值0（可自定义）
-        int jammer_num = input.get("jammer_num", 1).asInt();
-
-        // 配置卫星参数
-        barrage_config.satellite.carrier_power = 1e-16;
-        barrage_config.satellite.sat_pos = {
-            {125.0, 30.0, 5000},
-            {115.0, 35.0, 5000},
-            {130.0, 25.0, 5000},
-            {110.0, 28.0, 5000}
-        };
-
         // 2. 待处理的航迹数据
         // 解析多平台航迹数据
         const Json::Value& platform_tracks = input["platform_tracks"];
@@ -839,14 +822,6 @@ namespace seven {
         //初始化仿真类
         GNSSJammerSim sim;
         trajectory_result.clear();
-        std::vector<JammerRangeResult> jammer_range; // 存储每个干扰源的干扰范围
-
-        bool last_unlock_status = false;     //上一次失锁状态
-        bool cur_unlock_status = false;     //当前失锁状态
-        ECEF jammer_centre;
-        ECEF jammer_start;                   //干扰开始点
-        ECEF jammer_end;                     //干扰结束点
-        double r_jammer = 0;                     //干扰半径
 
         for (int i = 0; i < platform_tracks.size(); i++) {
             UINT platform_id = platform_tracks[i]["platform_id"].asUInt();
@@ -918,7 +893,7 @@ namespace seven {
         return 0;
     }
 
-    int Barrage_CalcjammerArea(SimConfig barrage_config, vector<JammerRangeResult>& jammer_range)
+    int Barrage_CalcjammerArea(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range)
     {
         GNSSJammerSim sim;
         sim.calc_jammer_area(barrage_config, jammer_range);

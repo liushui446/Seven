@@ -71,6 +71,7 @@ namespace seven {
         int max_collision_iter = 100;   // 最大避碰迭代次数
         int fps = 30;                    // 帧率（用于时间换算）
         int max_frames = 1500;           // 最大运行帧数
+        UINT return_frames = 100;        // 返回结果数据帧数
         bool isInitial = false;          // 是否进行编队初始化
 
         // 队形序列（默认：矩形→三角形→圆形→菱形→直线）
@@ -101,9 +102,6 @@ namespace seven {
             return *this;
         }
 
-        //UAVFormationParams(const UAVFormationParams& other) {
-        //    *this = other;  // 复用operator=，避免代码冗余
-        //}
     };
     
 

@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <cstring>
 #include <stdexcept>
+#include <winnt.h>
 
 
 using namespace Json;
@@ -80,7 +81,7 @@ namespace seven {
      * 压制：1; 欺骗：2 ;编队：3;
      * @param root 输出的 JSON 根节点
      */
-    void parser_cmd(Json::Value param, Json::Value& result)
+    void parser_cmd(HANDLE hPipe, Json::Value param, Json::Value& result)
     {
         //Cmd_Type type = static_cast<Cmd_Type>(param["cmd"].asInt());
         //if (type == Cmd_Type::Barrage)
@@ -120,9 +121,53 @@ namespace seven {
         }
         else if (sim_state == Sim_Type::RUNNING)
         {
-            g_sim_manager.sim_calc(param, result);
+            g_sim_manager.sim_calc(hPipe, param, result);
+        }
+        else if (sim_state == Sim_Type::ENDDING)
+        {
+            g_sim_manager.sim_end(result);
         }
 
+    }
+
+    // 供外部调用的管道数据发送接口
+    bool sendResultData(HANDLE hPipe, const std::string& result_str) {
+        // 校验参数合法性
+        if (hPipe == INVALID_HANDLE_VALUE || hPipe == NULL) {
+            std::cerr << "sendResultData: 无效的管道句柄" << std::endl;
+            return false;
+        }
+
+        if (result_str.empty()) {
+            std::cerr << "sendResultData: 发送数据为空" << std::endl;
+            return false;
+        }
+
+        DWORD bytesWritten = 0;
+        // 核心写管道逻辑
+        BOOL ret = WriteFile(
+            hPipe,
+            result_str.c_str(),
+            static_cast<DWORD>(result_str.length()),
+            &bytesWritten,
+            NULL
+        );
+
+        // 错误处理和日志
+        if (!ret) {
+            std::cerr << "sendResultData: 写管道失败，错误码：" << GetLastError() << std::endl;
+            return false;
+        }
+
+        if (bytesWritten != result_str.length()) {
+            std::cerr << "sendResultData: 数据发送不完整，预期发送" << result_str.length()
+                << "字节，实际发送" << bytesWritten << "字节" << std::endl;
+            return false;
+        }
+
+        // 可选：打印发送成功日志（调试用）
+        // std::cout << "sendResultData: 成功发送 " << bytesWritten << " 字节数据" << std::endl;
+        return true;
     }
 
     // 管道服务端：处理单个客户端连接
@@ -161,7 +206,7 @@ namespace seven {
 
                 Json::Value result;
                 // 执行计算
-                parser_cmd(cmd_mes, result);
+                parser_cmd(hPipe, cmd_mes, result);
                 std::string result_str = jsonToString(result); // 转为 JSON 字符串
 
                 // 将结果写回管道（返回给仿真平台）
@@ -185,14 +230,16 @@ namespace seven {
                 std::string result_str = jsonToString(error_result); // 转为 JSON 字符串
 
                 // 将结果写回管道（返回给仿真平台）
-                DWORD bytesWritten = 0;
+                /*DWORD bytesWritten = 0;
                 WriteFile(
                     hPipe,
                     result_str.c_str(),
                     result_str.length(),
                     &bytesWritten,
                     NULL
-                );
+                );*/
+
+                sendResultData(hPipe, result_str);
             }
 
             // 清空缓冲区

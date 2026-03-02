@@ -62,8 +62,10 @@ namespace seven {
         double Bn = 2.046e6;       // 噪声带宽 (Hz)
         double G_ant = 10;         // 抗干扰波束成形增益 (dB)
 
+        UINT return_frames = 100;  // 返回结果数据帧数
+
         // 干扰源列表
-        std::vector<JammerParam> jammers;
+        std::vector<JammerParam> jammers = {};
         //Jammer_Level jammer_lev = Jammer_Level::Weak;
 
         // 卫星参数
@@ -137,12 +139,12 @@ namespace seven {
         // 批量处理航迹数据接口
         std::vector<BarrageTrackResult> batch_calc(const std::vector<LLA>& track_points, const SimConfig& config);
 
-        void calc_jammer_area(SimConfig config, vector<JammerRangeResult>& jammer_range);
+        void calc_jammer_area(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range);
     };
 
     int SEVEN_EXPORTS Barrage_Test(Json::Value input, Json::Value& trajectory_result);
     int SEVEN_EXPORTS Barrage_Test_1(Json::Value input, Json::Value& trajectory_result);
-    int SEVEN_EXPORTS Barrage_CalcjammerArea(SimConfig barrage_config, vector<JammerRangeResult>& jammer_range);
+    int SEVEN_EXPORTS Barrage_CalcjammerArea(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range);
 
     static SimConfig barrage_config;
 }

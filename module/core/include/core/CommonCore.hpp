@@ -73,9 +73,10 @@ namespace seven
 
     enum class Sim_Type
     {
-        STOPPED = 1,  // 仿真已停止
-        STARTTED = 2,  // 仿真开始
-        RUNNING = 3  // 仿真运行中
+        STOPPED = 1,   // 仿真暂停
+        STARTTED = 2,  // 仿真准备
+        RUNNING = 3,   // 仿真运行中
+        ENDDING = 4    // 仿真结束
     };
 
     enum class Jammer_Level

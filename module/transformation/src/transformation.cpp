@@ -849,12 +849,7 @@ namespace seven {
         // 1. 初始化参数
         UAVFormationParams params;
 
-        /*formation_param_.num_uavs = input["num_uavs"].asInt();
-        formation_param_.interval = input["interval"].asDouble();
-        formation_param_.collision_radius = input["collision_radius"].asDouble();
-        formation_param_.max_frames = input["max_frames"].asInt();*/
         formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
-        //formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
 
         // 2. 创建编队变换实例
         UAVFormationTransformer transformer;

@@ -18,6 +18,8 @@ namespace seven {
 
 	void handle_client(HANDLE hPipe);
 
+	bool SEVEN_EXPORTS sendResultData(HANDLE hPipe, const std::string& result_str);
+
 	void SEVEN_EXPORTS start_pipe_server();
 
 }

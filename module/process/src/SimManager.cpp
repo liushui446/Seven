@@ -9,7 +9,7 @@
 #include <windows.h>
 #include <cstring>
 #include <stdexcept>
-
+#include <process/CalcThread.hpp>
 
 using namespace Json;
 
@@ -24,40 +24,39 @@ namespace seven {
         // 检查当前状态
         if (sim_state_ == SimState::RUNNING) {
             result["status"] = "error";
-            result["message"] = "仿真已在运行中，无法重复开始";
+            result["message"] = "sim is running, do not restart";
             return -1;
         }
 
         try {
-            
+            // 构造返回结果（干扰源位置JSON）
+            result.clear();
             // 初始化配置
             Json::Value& jammer_list = result["jammer_list"];
             init_sim_config(input, jammer_list);
 
-            // 构造返回结果（干扰源位置JSON）
-            result.clear();
             result["status"] = "success";
-            result["message"] = "仿真启动成功";
+            result["message"] = "sim started success";
 
             // 更新仿真状态
             sim_state_ = SimState::RUNNING;
         }
         catch (const std::exception& e) {
             result["status"] = "error";
-            result["message"] = std::string("仿真启动失败: ") + e.what();
+            result["message"] = std::string("sim started fail: ") + e.what();
             return -1;
         }
 
         return 0;
     }
 
-    int SimManager::sim_calc(const Json::Value& input, Json::Value& result) {
+    int SimManager::sim_calc(HANDLE hPipe, const Json::Value& input, Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
         // 检查仿真状态
-        if (sim_state_ != SimState::RUNNING) {
+        if (sim_state_ != SimState::IDLE || sim_state_ != SimState::STOPPED) {
             result["status"] = "error";
-            result["message"] = "仿真已结束，请重新开始";
+            result["message"] = "sim end, please restart";
             return -1;
         }
 
@@ -71,13 +70,29 @@ namespace seven {
 
             GNSSJammerSim sim;
 
-            if (input.get("cmd", 4).asInt() == 4) {
+            int cmd_int = input.get("cmd", 4).asInt();
+            if (cmd_int != 1 || cmd_int != 2 || cmd_int != 3) {
                 result["status"] = "error";  // 字符串值
-                result["message"] = std::string("parser command fail：");  // 拼接字符串
+                result["message"] = std::string("parser command fail:");  // 拼接字符串
                 result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
                 return -1;
             }
-            Cmd_Type type = static_cast<Cmd_Type>(input.get("cmd", 4).asInt());
+
+            // 1. 获取线程管理器实例
+            auto calc_thread = seven::CalcProcessThread::GetInstance();
+
+            // 2. 启动线程工作
+            calc_thread->StartWork(true);
+
+            // 3. 提交任务（内部会自动唤醒线程）
+            Json::Value output;
+            bool ret = calc_thread->SubmitTask(hPipe, input, output);
+
+            if (ret) {
+
+            }
+
+            Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
             if (type == Cmd_Type::Barrage)
             {
                 Barrage_Test_1(input, result);
@@ -90,44 +105,10 @@ namespace seven {
             {
                 Transformation_Test(input, result);
             }
-
-            // 遍历每个平台的航迹
-            //for (int i = 0; i < platform_tracks.size(); i++) {
-            //    UINT platform_id = platform_tracks[i]["platform_id"].asUInt();
-            //    const Json::Value& track_points_json = platform_tracks[i]["track_points"];
-
-            //    // 转换JSON航迹点到内部格式
-            //    std::vector<LLA> track_points;
-            //    for (int j = 0; j < track_points_json.size(); j++) {
-            //        LLA point;
-            //        point.lon_deg = track_points_json[j]["lon_deg"].asDouble();
-            //        point.lat_deg = track_points_json[j]["lat_deg"].asDouble();
-            //        point.h_m = track_points_json[j]["h_m"].asDouble() / 1000.0; // 米转千米
-            //        track_points.push_back(point);
-            //    }
-
-            //    // 执行仿真计算
-            //    std::vector<BarrageTrackResult> calc_results;// = sim.batch_calc(track_points, config_);
-
-            //    // 构造该平台的结果
-            //    Json::Value platform_result;
-            //    platform_result["platform_id"] = platform_id;
-
-            //    Json::Value& track_results = platform_result["track_results"];
-            //    for (int j = 0; j < calc_results.size(); j++) {
-            //        Json::Value track_point;
-            //        
-
-            //        track_results.append(track_point);
-            //    }
-
-            //    platform_results.append(platform_result);
-            //}
-
         }
         catch (const std::exception& e) {
             result["status"] = "error";
-            result["message"] = std::string("计算失败: ") + e.what();
+            result["message"] = std::string("calc fail: ") + e.what();
             return -1;
         }
 
@@ -142,16 +123,36 @@ namespace seven {
 
         if (sim_state_ != SimState::RUNNING) {
             result["status"] = "warning";
-            result["message"] = "仿真未运行，无需结束";
+            result["message"] = "sim is not running, do not stop";
             return 0;
         }
 
         // 重置状态和配置
         sim_state_ = SimState::STOPPED;
-        //config_ = SimConfig();
 
         result["status"] = "success";
-        result["message"] = "仿真已成功结束";
+        result["message"] = "sim stop";
+
+        return 0;
+    }
+
+    int SimManager::sim_end(Json::Value& result)
+    {
+        std::lock_guard<std::mutex> lock(sim_mutex_);
+
+        result.clear();
+
+        if (sim_state_ == SimState::ENDDING) {
+            result["status"] = "warning";
+            result["message"] = "sim done, need not end";
+            return 0;
+        }
+
+        // 重置状态和配置
+        sim_state_ = SimState::ENDDING;
+
+        result["status"] = "success";
+        result["message"] = "sim done";
 
         return 0;
     }
@@ -166,6 +167,7 @@ namespace seven {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
             int jammer_num = input.get("jammer_num", 1).asInt();
+            barrage_config.return_frames = input.get("return_frames", 100).asInt();
 
             // 设置beta参数
             if (jammer_strength == Jammer_Level::High) {
@@ -179,6 +181,7 @@ namespace seven {
             }
 
             //干扰源添加
+            barrage_config.jammers.clear();
             for (int i = 0; i < jammer_num; i++)
             {
                 // 添加干扰源（每个干扰源位置略有偏移）
@@ -192,6 +195,16 @@ namespace seven {
                 jammer.freq = GNSS_FC;
                 barrage_config.jammers.push_back(jammer);
             }
+
+            // 配置卫星参数
+            barrage_config.satellite.carrier_power = 1e-16;
+            barrage_config.satellite.sat_pos.clear();
+            barrage_config.satellite.sat_pos = {
+                {125.0, 30.0, 5000},
+                {115.0, 35.0, 5000},
+                {130.0, 25.0, 5000},
+                {110.0, 28.0, 5000}
+            };
 
             //失锁范围计算
             vector<JammerRangeResult> jammer_range_result;
@@ -215,6 +228,7 @@ namespace seven {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
             //int jammer_num = input.get("jammer_num", 1).asInt();
+            deception_config.return_frames = input.get("return_frames", 100).asInt();
 
             // 设置beta参数
             if (jammer_strength == Jammer_Level::High) {

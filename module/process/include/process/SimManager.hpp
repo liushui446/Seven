@@ -11,20 +11,25 @@ namespace seven {
     class SimManager {
     public:
         enum class SimState {
-            STOPPED = 0,  // 仿真已停止
-            RUNNING = 1   // 仿真运行中
+            ENDDING = 0,  // 仿真终止
+            STOPPED = 1,  // 仿真暂停
+            RUNNING = 2,   // 仿真运行中
+            IDLE    = 3   // 仿真准备状态
         };
 
         SimManager();
 
-        // 1. 仿真开始接口
+        // 1. 仿真准备接口
         int sim_start(const Json::Value& input, Json::Value& result);
 
-        // 2. 多平台航迹计算接口
-        int sim_calc(const Json::Value& input, Json::Value& result);
+        // 2. 仿真开始(多平台航迹计算接口)
+        int sim_calc(HANDLE hPipe, const Json::Value& input, Json::Value& result);
+
+        // 3. 仿真暂停接口
+        int sim_stop(Json::Value& result);
 
         // 3. 仿真结束接口
-        int sim_stop(Json::Value& result);
+        int sim_end(Json::Value& result);
 
     private:
         // 初始化仿真配置
