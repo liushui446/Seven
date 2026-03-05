@@ -812,30 +812,32 @@ namespace seven {
         return 0;
     }
 
-    int Barrage_Test_1(Json::Value input, Json::Value& trajectory_result) {
+    int Barrage_Test_1(std::shared_ptr<CalcTaskParam>& task_param) {
 
-        // 2. 待处理的航迹数据
-        // 解析多平台航迹数据
-        const Json::Value& platform_tracks = input["platform_tracks"];
-        //Json::Value& platform_results = result["platform_results"];
+        // 1. 待处理的航迹数据
 
         //初始化仿真类
         GNSSJammerSim sim;
-        trajectory_result.clear();
+        task_param->trajectory_result.clear();
 
-        for (int i = 0; i < platform_tracks.size(); i++) {
-            UINT platform_id = platform_tracks[i]["platform_id"].asUInt();
-            const Json::Value& track_points_json = platform_tracks[i]["track_points"];
+        for (int i = 0; i < task_param->serveral_plat.size(); i++) {
+            UINT platform_id = task_param->serveral_plat[i].plat_id;
 
             // 转换JSON航迹点到内部格式
             std::vector<LLA> track_points;
-            for (int j = 0; j < track_points_json.size(); j++) {
+            for (int j = 0; j < task_param->return_frames; j++) {
 
                 LLA target_pos;
-                target_pos.lon_deg = track_points_json[j]["lon_deg"].asDouble();
-                target_pos.lat_deg = track_points_json[j]["lat_deg"].asDouble();
-                target_pos.h_m = track_points_json[j]["h_m"].asDouble() / 1000.0; // 米转千米
+                target_pos.lon_deg = task_param->serveral_plat[i].cur_plat_pos.lon_deg + task_param->serveral_plat[i].cur_plat_vec.lon_deg * j;
+                target_pos.lat_deg = task_param->serveral_plat[i].cur_plat_pos.lat_deg + task_param->serveral_plat[i].cur_plat_vec.lat_deg * j;
+                target_pos.h_m = task_param->serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param->serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
                 track_points.push_back(target_pos);
+
+                //记录运行固定帧数后的位置
+                if (j == task_param->return_frames - 1)
+                {
+                    task_param->serveral_plat[i].cur_plat_pos = target_pos + task_param->serveral_plat[i].cur_plat_vec;
+                }
             }
 
             //仿真计算
@@ -888,8 +890,10 @@ namespace seven {
                 // 将当前航迹点对象加入数组，trajectory_result最终是JSON数组
                 track_results.append(track_point);
             }
-            trajectory_result.append(platform_result);
+            task_param->trajectory_result.append(platform_result);
         }
+        //运行帧数计算
+        task_param->run_frames = task_param->run_frames + task_param->return_frames;
         return 0;
     }
 

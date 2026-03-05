@@ -467,9 +467,9 @@ namespace seven {
         return 0;
     }
 
-    int Deception_Use(Json::Value input, Json::Value& trajectory_result) {
+    int Deception_Use(std::shared_ptr<CalcTaskParam>& task_param) {
 
-        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
+        //Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
 
         // 1. 创建计算实例
         GNSSDeceptionError gnss_error;
@@ -479,51 +479,47 @@ namespace seven {
         //deception_config.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
         //gnss_error.set_params(deception_config);
 
-        if (jammer_strength == Jammer_Level::High)
-        {
-            deception_config.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
-        else if (jammer_strength == Jammer_Level::Middle)
-        {
-            deception_config.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
-        else if (jammer_strength == Jammer_Level::Low)
-        {
-            deception_config.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
-
-        // 3. 输入航迹数据
-        std::vector<LLA> track_points = {
-            {115.193, 29.027, 1},
-        };
-
-        LLA target_velocity = { 0.001, 0.0005, 0 };
-
-        UINT sim_time = 100;  // 仿真时长(s)200
-
-        LLA inital_pos = track_points[0];
-        for (int step = 0; step < sim_time; step++)
-        {
-            LLA target_pos;
-            target_pos = inital_pos + target_velocity * step;
-            track_points.push_back(target_pos);
-        }
+        //if (jammer_strength == Jammer_Level::High)
+        //{
+        //    deception_config.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
+        //    gnss_error.set_params(deception_config);
+        //}
+        //else if (jammer_strength == Jammer_Level::Middle)
+        //{
+        //    deception_config.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
+        //    gnss_error.set_params(deception_config);
+        //}
+        //else if (jammer_strength == Jammer_Level::Low)
+        //{
+        //    deception_config.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
+        //    gnss_error.set_params(deception_config);
+        //}
 
         // 解析多平台航迹数据
-        const Json::Value& platform_tracks = input["platform_tracks"];
+        for (int i = 0; i < task_param->serveral_plat.size(); i++) {
+            UINT platform_id = task_param->serveral_plat[i].plat_id;
+            
+            // 转换JSON航迹点到内部格式
+            std::vector<LLA> track_points;
+            for (int j = 0; j < task_param->return_frames; j++) {
 
-        for (int i = 0; i < platform_tracks.size(); i++) {
-            UINT platform_id = platform_tracks[i]["platform_id"].asUInt();
-            const Json::Value& track_points_json = platform_tracks[i]["track_points"];
+                LLA target_pos;
+                target_pos.lon_deg = task_param->serveral_plat[i].cur_plat_pos.lon_deg + task_param->serveral_plat[i].cur_plat_vec.lon_deg * j;
+                target_pos.lat_deg = task_param->serveral_plat[i].cur_plat_pos.lat_deg + task_param->serveral_plat[i].cur_plat_vec.lat_deg * j;
+                target_pos.h_m = task_param->serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param->serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
+                track_points.push_back(target_pos);
+
+                if (j == task_param->return_frames - 1)
+                {
+                    task_param->serveral_plat[i].cur_plat_pos = target_pos + task_param->serveral_plat[i].cur_plat_vec;
+                }
+            }
 
             // 4. 批量计算
             std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
             // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
-            trajectory_result.clear(); // 可选，复用对象时建议保留
+            task_param->trajectory_result.clear(); // 可选，复用对象时建议保留
 
             // 构造该平台的结果
             Json::Value platform_result;
@@ -558,8 +554,10 @@ namespace seven {
                 // 将当前航迹点加入数组
                 track_results.append(track_point);
             }
-            trajectory_result.append(platform_result);
+            task_param->trajectory_result.append(platform_result);
         }
+        //运行帧数计算
+        task_param->run_frames = task_param->run_frames + task_param->run_frames;
         return 0;
     }
 

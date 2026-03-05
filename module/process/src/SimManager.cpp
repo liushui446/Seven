@@ -10,12 +10,13 @@
 #include <cstring>
 #include <stdexcept>
 #include <process/CalcThread.hpp>
+#include "process/CalcParamRes.hpp"
 
 using namespace Json;
 
 namespace seven {
 
-    SimManager::SimManager() : sim_state_(SimState::STOPPED), sim_time_(400) {}
+    SimManager::SimManager() : sim_state_(SimState::ENDDING), sim_time_(800), calc_thread_ptr(nullptr){}
 
     // 1. 仿真开始接口
     int SimManager::sim_start(const Json::Value& input, Json::Value& result) {
@@ -35,11 +36,21 @@ namespace seven {
             Json::Value& jammer_list = result["jammer_list"];
             init_sim_config(input, jammer_list);
 
+            if (calc_thread_ptr == nullptr)
+            {
+                // 1. 获取线程管理器实例
+                calc_thread_ptr = seven::CalcProcessThread::GetInstance();
+
+                // 2. 启动线程工作
+                calc_thread_ptr->StartWork(true);
+            }
+            
+
             result["status"] = "success";
             result["message"] = "sim started success";
 
             // 更新仿真状态
-            sim_state_ = SimState::RUNNING;
+            sim_state_ = SimState::IDLE;
         }
         catch (const std::exception& e) {
             result["status"] = "error";
@@ -53,60 +64,83 @@ namespace seven {
     int SimManager::sim_calc(HANDLE hPipe, const Json::Value& input, Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
-        // 检查仿真状态
-        if (sim_state_ != SimState::IDLE || sim_state_ != SimState::STOPPED) {
-            result["status"] = "error";
-            result["message"] = "sim end, please restart";
+        int cmd_int = input.get("cmd", 4).asInt();
+        if (cmd_int != 1 && cmd_int != 2 && cmd_int != 3) {
+            result["status"] = "error";  // 字符串值
+            result["message"] = std::string("parser command fail:");  // 拼接字符串
+            result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
             return -1;
+        }
+        Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
+        //状态判断
+        if (type == Cmd_Type::Transformation)
+        {
+            if (sim_state_ == SimState::ENDDING)
+            {
+                result["status"] = "error";
+                result["message"] = "sim end, please restart";
+                return -1;
+            }
+        }
+        else
+        {
+            // 检查仿真状态
+            if (sim_state_ != SimState::IDLE && sim_state_ != SimState::STOPPED) {
+                if (sim_state_ == SimState::RUNNING)
+                {
+                    result["status"] = "error";
+                    result["message"] = "sim is running";
+                    return -1;
+                }
+                else {
+                    result["status"] = "error";
+                    result["message"] = "sim end, please restart";
+                    return -1;
+                }
+            }
         }
 
         try {
             result.clear();
             result["status"] = "success";
-
-            // 解析多平台航迹数据
-            const Json::Value& platform_tracks = input["platform_tracks"];
-            Json::Value& platform_results = result["platform_results"];
+            // 更新仿真状态
+            sim_state_ == SimState::RUNNING;
 
             GNSSJammerSim sim;
 
-            int cmd_int = input.get("cmd", 4).asInt();
-            if (cmd_int != 1 || cmd_int != 2 || cmd_int != 3) {
-                result["status"] = "error";  // 字符串值
-                result["message"] = std::string("parser command fail:");  // 拼接字符串
-                result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
-                return -1;
-            }
-
-            // 1. 获取线程管理器实例
-            auto calc_thread = seven::CalcProcessThread::GetInstance();
-
-            // 2. 启动线程工作
-            calc_thread->StartWork(true);
-
             // 3. 提交任务（内部会自动唤醒线程）
             Json::Value output;
-            bool ret = calc_thread->SubmitTask(hPipe, input, output);
-
-            if (ret) {
-
-            }
-
-            Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
+            bool ret;
             if (type == Cmd_Type::Barrage)
             {
-                Barrage_Test_1(input, result);
+                CalcParamManager::Ins().SwapPlatform(barrage_config.platsparam);
+                ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
             }
             else if (type == Cmd_Type::Deception)
             {
-                Deception_Use(input, result);
+                CalcParamManager::Ins().SwapPlatform(deception_config.platsparam);
+                ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
             }
-            else if (type == Cmd_Type::Transformation)
-            {
-                Transformation_Test(input, result);
-            }
+            if (ret) {}
+
+            //Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
+            //if (type == Cmd_Type::Barrage)
+            //{
+            //    //Barrage_Test_1(input, result);
+            //}
+            //else if (type == Cmd_Type::Deception)
+            //{
+            //    //Deception_Use(input, result);
+            //}
+            //else if (type == Cmd_Type::Transformation)
+            //{
+            //    //Transformation_Test(input, result);
+            //}
         }
         catch (const std::exception& e) {
+
+            calc_thread_ptr->UnInit();
+            sim_state_ == SimState::ENDDING;
             result["status"] = "error";
             result["message"] = std::string("calc fail: ") + e.what();
             return -1;
@@ -115,7 +149,7 @@ namespace seven {
         return 0;
     }
 
-    // 3. 仿真结束接口
+    // 3. 仿真暂停接口
     int SimManager::sim_stop(Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
@@ -126,6 +160,8 @@ namespace seven {
             result["message"] = "sim is not running, do not stop";
             return 0;
         }
+
+        calc_thread_ptr->Interrupted();
 
         // 重置状态和配置
         sim_state_ = SimState::STOPPED;
@@ -148,7 +184,12 @@ namespace seven {
             return 0;
         }
 
-        // 重置状态和配置
+        //重置运行帧数
+        CalcParamManager::Ins().SetRunFramesCnt(0);
+
+        calc_thread_ptr->UnInit();
+
+        // 更新仿真状态
         sim_state_ = SimState::ENDDING;
 
         result["status"] = "success";
@@ -167,9 +208,10 @@ namespace seven {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
             int jammer_num = input.get("jammer_num", 1).asInt();
-            barrage_config.return_frames = input.get("return_frames", 100).asInt();
+            UINT return_frames = input.get("return_frames", 100).asInt();
+            CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
-            // 设置beta参数
+            // 1.设置beta参数
             if (jammer_strength == Jammer_Level::High) {
                 barrage_config.beta = 5e4;
             }
@@ -180,7 +222,7 @@ namespace seven {
                 barrage_config.beta = 2e5;
             }
 
-            //干扰源添加
+            // 2.干扰源添加
             barrage_config.jammers.clear();
             for (int i = 0; i < jammer_num; i++)
             {
@@ -196,7 +238,7 @@ namespace seven {
                 barrage_config.jammers.push_back(jammer);
             }
 
-            // 配置卫星参数
+            // 3.配置卫星参数
             barrage_config.satellite.carrier_power = 1e-16;
             barrage_config.satellite.sat_pos.clear();
             barrage_config.satellite.sat_pos = {
@@ -206,7 +248,7 @@ namespace seven {
                 {110.0, 28.0, 5000}
             };
 
-            //失锁范围计算
+            // 4.失锁范围计算
             vector<JammerRangeResult> jammer_range_result;
             Barrage_CalcjammerArea(barrage_config, jammer_range_result);
 
@@ -222,15 +264,65 @@ namespace seven {
                 jammer_mes["jammer r"] = jammer_range_result[cnt].jammer_radius; //m
                 result.append(jammer_mes);
             }
+
+            // 5.解析多平台目标数据
+            // 解析多平台航迹数据
+            
+            const Json::Value& platform_tracks = input["platform_tracks"];
+            for (int i = 0; i < platform_tracks.size(); i++) {
+                const Json::Value& plat_json = platform_tracks[i];
+                InputPlatParam plat_data;
+
+                // ===== 解析平台ID（必选字段）=====
+                if (!plat_json.isMember("platform_id") || !plat_json["platform_id"].isUInt()) {
+                    std::cerr << "警告：第" << i << "个平台缺少有效platform_id，跳过该平台！" << std::endl;
+                    continue;
+                }
+                plat_data.plat_id = plat_json["platform_id"].asUInt();
+
+                // ===== 解析初始位置inital_pos（必选字段，数组）=====
+                const Json::Value& inital_pos_arr = plat_json["inital_pos"];
+                if (!inital_pos_arr.isArray() || inital_pos_arr.empty()) {
+                    std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效inital_pos数组，跳过！" << std::endl;
+                    continue;
+                }
+                const Json::Value& inital_pos_json = inital_pos_arr[0];  // 取第一个位置点
+                LLA initial_pos;
+                // 字段默认值+存在性检查，避免缺失字段导致解析错误
+                initial_pos.lon_deg = inital_pos_json.isMember("lon_deg") ? inital_pos_json["lon_deg"].asDouble() : 0.0;
+                initial_pos.lat_deg = inital_pos_json.isMember("lat_deg") ? inital_pos_json["lat_deg"].asDouble() : 0.0;
+                initial_pos.h_m = inital_pos_json.isMember("h_m") ? inital_pos_json["h_m"].asDouble() / 1000 : 0.0;  // 米转千米
+
+                // ===== 解析速度velocity（必选字段，数组）=====
+                const Json::Value& velocity_arr = plat_json["velocity"];
+                if (!velocity_arr.isArray() || velocity_arr.empty()) {
+                    std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效velocity数组，跳过！" << std::endl;
+                    continue;
+                }
+                const Json::Value& velocity_json = velocity_arr[0];  // 取第一个速度点
+                LLA plat_vec;
+                plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
+                plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
+                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
+
+                // ===== 赋值到平台参数 =====
+                plat_data.plat_initial_pos = initial_pos;
+                plat_data.cur_plat_pos = initial_pos;  // 初始位置=当前位置
+                plat_data.cur_plat_vec = plat_vec;     // 速度=JSON中的velocity
+
+                barrage_config.platsparam.push_back(plat_data);
+            }
+            std::cout << "platsparam size:" << to_string(barrage_config.platsparam.size()) << std::endl;
         }
         else if (type == Cmd_Type::Deception)
         {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
             //int jammer_num = input.get("jammer_num", 1).asInt();
-            deception_config.return_frames = input.get("return_frames", 100).asInt();
+            UINT return_frames = input.get("return_frames", 100).asInt();
+            CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
-            // 设置beta参数
+            // 1.设置beta参数
             if (jammer_strength == Jammer_Level::High) {
                 
             }
@@ -241,6 +333,7 @@ namespace seven {
                 
             }
             
+            // 2.干扰源添加
             for (int cnt = 0; cnt < deception_config.jammer_num; cnt++)
             {
                 //干扰范围
@@ -254,6 +347,53 @@ namespace seven {
                 result.append(jammer_mes);
             }
 
+            // 3.解析多平台目标数据
+            // 解析多平台航迹数据
+            const Json::Value& platform_tracks = input["platform_tracks"];
+            for (int i = 0; i < platform_tracks.size(); i++) {
+                const Json::Value& plat_json = platform_tracks[i];
+                InputPlatParam plat_data;
+
+                // ===== 解析平台ID（必选字段）=====
+                if (!plat_json.isMember("platform_id") || !plat_json["platform_id"].isUInt()) {
+                    std::cerr << "警告：第" << i << "个平台缺少有效platform_id，跳过该平台！" << std::endl;
+                    continue;
+                }
+                plat_data.plat_id = plat_json["platform_id"].asUInt();
+
+                // ===== 解析初始位置inital_pos（必选字段，数组）=====
+                const Json::Value& inital_pos_arr = plat_json["inital_pos"];
+                if (!inital_pos_arr.isArray() || inital_pos_arr.empty()) {
+                    std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效inital_pos数组，跳过！" << std::endl;
+                    continue;
+                }
+                const Json::Value& inital_pos_json = inital_pos_arr[0];  // 取第一个位置点
+                LLA initial_pos;
+                // 字段默认值+存在性检查，避免缺失字段导致解析错误
+                initial_pos.lon_deg = inital_pos_json.isMember("lon_deg") ? inital_pos_json["lon_deg"].asDouble() : 0.0;
+                initial_pos.lat_deg = inital_pos_json.isMember("lat_deg") ? inital_pos_json["lat_deg"].asDouble() : 0.0;
+                initial_pos.h_m = inital_pos_json.isMember("h_m") ? inital_pos_json["h_m"].asDouble() / 1000 : 0.0;  // 米转千米
+
+                // ===== 解析速度velocity（必选字段，数组）=====
+                const Json::Value& velocity_arr = plat_json["velocity"];
+                if (!velocity_arr.isArray() || velocity_arr.empty()) {
+                    std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效velocity数组，跳过！" << std::endl;
+                    continue;
+                }
+                const Json::Value& velocity_json = velocity_arr[0];  // 取第一个速度点
+                LLA plat_vec;
+                plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
+                plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
+                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
+
+                // ===== 赋值到平台参数 =====
+                plat_data.plat_initial_pos = initial_pos;
+                plat_data.cur_plat_pos = initial_pos;  // 初始位置=当前位置
+                plat_data.cur_plat_vec = plat_vec;     // 速度=JSON中的velocity
+
+                deception_config.platsparam.push_back(plat_data);
+            }
+            std::cout << "platsparam size:" << to_string(deception_config.platsparam.size()) << std::endl;
         }
         else if (type == Cmd_Type::Transformation)
         {

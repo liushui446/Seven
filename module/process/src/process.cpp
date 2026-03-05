@@ -11,6 +11,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <winnt.h>
+//#include <signal.h>
 
 
 using namespace Json;
@@ -21,6 +22,18 @@ namespace seven {
     const int BUF_SIZE = 4096 * 10000;
     // JSON 数据分隔符（解决管道粘包，需确保分隔符不在 JSON 内容中）
     const std::string JSON_DELIMITER = "\n###END###\n";
+
+    // 全局退出标志：用于控制主循环退出
+    volatile bool g_is_running = true;
+    
+
+    //// 信号处理函数：捕获Ctrl+C，设置退出标志
+    //void signal_handler(int sig) {
+    //    if (sig == SIGINT) {
+    //        std::cout << "\n接收到退出信号，准备关闭管道服务端..." << std::endl;
+    //        g_is_running = false;
+    //    }
+    //}
 
     //控制DOUBLE类型精度,并转成string
     string formatDouble(double value, int precision) {
@@ -110,7 +123,7 @@ namespace seven {
             result["data"] = Json::nullValue;  // 空值（替代 nullptr，JsonCpp 专用）
             return;
         }
-        Sim_Type sim_state = static_cast<Sim_Type>(param.get("sim_type", 1).asInt());
+        Sim_Type sim_state = static_cast<Sim_Type>(param.get("sim_type", 4).asInt());
         if (sim_state == Sim_Type::STOPPED)
         {
             g_sim_manager.sim_stop(result);
@@ -131,13 +144,14 @@ namespace seven {
     }
 
     // 供外部调用的管道数据发送接口
-    bool sendResultData(HANDLE hPipe, const std::string& result_str) {
+    bool sendResultData(HANDLE hPipe, const Json::Value& result) {
         // 校验参数合法性
         if (hPipe == INVALID_HANDLE_VALUE || hPipe == NULL) {
-            std::cerr << "sendResultData: 无效的管道句柄" << std::endl;
+            std::cerr << "sendResultData: 无效的s2c管道句柄" << std::endl;
             return false;
         }
 
+        std::string result_str = jsonToString(result); // 转为 JSON 字符串
         if (result_str.empty()) {
             std::cerr << "sendResultData: 发送数据为空" << std::endl;
             return false;
@@ -155,7 +169,7 @@ namespace seven {
 
         // 错误处理和日志
         if (!ret) {
-            std::cerr << "sendResultData: 写管道失败，错误码：" << GetLastError() << std::endl;
+            std::cerr << "sendResultData: 写s2c管道失败，错误码：" << GetLastError() << std::endl;
             return false;
         }
 
@@ -255,7 +269,6 @@ namespace seven {
         // 管道名称（Windows 格式：\\.\pipe\管道名，需唯一）
         const std::wstring pipe_name = L"\\\\.\\pipe\\SimCalculatorPipe";
 
-
         while (true) {
             // 创建命名管道
             HANDLE hPipe = CreateNamedPipeW(
@@ -291,5 +304,284 @@ namespace seven {
                 CloseHandle(hPipe);
             }
         }
+    }
+
+    // 处理单个客户端通信（复用管道句柄）
+    void handle_client_communication(HANDLE hPipe, HANDLE hPipe_s2c) {
+        char buffer[4096] = { 0 };
+        DWORD bytesRead = 0;
+
+        // 持续读取客户端命令（直到客户端断开/程序退出）
+        while (g_is_running) {
+            // 读取管道中的命令（阻塞，直到有数据/出错）
+            BOOL ret = ReadFile(
+                hPipe,
+                buffer,
+                sizeof(buffer) - 1,
+                &bytesRead,
+                NULL
+            );
+
+            if (!ret || bytesRead == 0) {
+                DWORD err = GetLastError();
+                if (err == ERROR_BROKEN_PIPE) {
+                    std::cout << "客户端断开连接，等待新客户端连接..." << std::endl;
+                }
+                else {
+                    std::cerr << "读取数据失败，错误码：" << err << std::endl;
+                }
+                break; // 退出通信循环，回到等待连接阶段
+            }
+
+            // 解析接收到的 JSON 命令
+            buffer[bytesRead] = '\0'; // 确保字符串结束
+            std::string cmd_str(buffer);
+            std::cout << "收到命令：" << cmd_str << std::endl;
+
+            try {
+                Json::Value cmd_mes;
+                if (!stringToJson(cmd_str, cmd_mes)) {
+                    memset(buffer, 0, sizeof(buffer));
+                    continue;
+                }
+
+                Json::Value result;
+                // 执行计算
+                parser_cmd(hPipe_s2c, cmd_mes, result);
+                std::string result_str = jsonToString(result); // 转为 JSON 字符串
+
+                // 将结果写回管道（返回给仿真平台）
+                DWORD bytesWritten = 0;
+                BOOL write_ok = WriteFile(
+                    hPipe,
+                    result_str.c_str(),
+                    result_str.length(),
+                    &bytesWritten,
+                    NULL
+                );
+
+                if (write_ok) {
+                    FlushFileBuffers(hPipe); // 强制刷新，确保数据立即发送
+                    std::cout << "回复客户端成功，写入字节数：" << bytesWritten << std::endl;
+                }
+                else {
+                    std::cerr << "回复客户端失败，错误码：" << GetLastError() << std::endl;
+                }
+            }
+            catch (const std::exception& e) {
+                // 构造错误结果返回给客户端
+                Json::Value error_result;
+                error_result["status"] = "error";
+                error_result["message"] = std::string("process commande fail：") + e.what();
+                error_result["data"] = Json::nullValue;
+
+                std::string result_str = jsonToString(error_result);
+                sendResultData(hPipe, result_str);
+            }
+
+            // 清空缓冲区
+            memset(buffer, 0, sizeof(buffer));
+        }
+    }
+
+    // 启动管道服务端（单句柄版本）
+    void start_pipe_server_test() {
+        // 管道名称（Windows 格式：\\.\pipe\管道名）
+        const std::wstring pipe_name = L"\\\\.\\pipe\\SimCalculatorPipe";
+        // 定义两个命名管道的名称
+        const std::wstring pipe_name_client_to_server = L"\\\\.\\pipe\\ClientToServerPipe";
+        const std::wstring pipe_name_server_to_client = L"\\\\.\\pipe\\ServerToClientPipe";
+
+        // ========== 核心修改：只创建一次管道句柄 ==========
+        HANDLE hPipe = CreateNamedPipeW(
+            pipe_name.c_str(),
+            PIPE_ACCESS_DUPLEX,       // 双向管道（可读可写）
+            PIPE_TYPE_MESSAGE |       // 消息模式（按消息边界读取）
+            PIPE_READMODE_MESSAGE |
+            PIPE_WAIT,                // 阻塞模式
+            1,                        // 单实例（匹配单句柄复用）
+            4096,                     // 输出缓冲区大小
+            4096,                     // 输入缓冲区大小
+            0,                        // 默认超时
+            NULL                      // 安全属性
+        );
+
+        if (hPipe == INVALID_HANDLE_VALUE) {
+            std::cerr << "创建管道失败，错误码：" << GetLastError() << std::endl;
+            return; // 管道创建失败，直接退出
+        }
+        std::cout << "管道句柄创建成功，等待客户端连接..." << std::endl;
+
+        // 主循环：复用管道句柄，持续等待客户端连接
+        while (g_is_running) {
+            // 等待客户端（仿真平台）连接（阻塞）
+            BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+
+            if (connected) {
+                std::cout << "仿真平台已连接" << std::endl;
+                // 处理客户端通信（复用当前管道句柄）
+                //handle_client_communication(hPipe);
+
+                // 客户端断开后，重置管道状态，等待下一次连接
+                DisconnectNamedPipe(hPipe);
+            }
+            else {
+                DWORD err = GetLastError();
+                if (err != ERROR_NO_DATA && err != ERROR_PIPE_CONNECTED) {
+                    std::cerr << "等待客户端连接失败，错误码：" << err << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+            }
+        }
+
+        // ========== 程序退出时，关闭唯一的管道句柄 ==========
+        if (hPipe != INVALID_HANDLE_VALUE) {
+            CloseHandle(hPipe);
+            std::cout << "管道句柄已关闭" << std::endl;
+        }
+    }
+
+    void start_double_pipe_test() {
+        // 定义两个命名管道的名称
+        const std::wstring pipe_name_client_to_server = L"\\\\.\\pipe\\ClientToServerPipe";
+        const std::wstring pipe_name_server_to_client = L"\\\\.\\pipe\\ServerToClientPipe";
+
+        // s2c管道句柄（供其他线程访问）
+        HANDLE g_hPipe_s2c = INVALID_HANDLE_VALUE;
+
+        // ========== 1. 创建c2s管道（双向：读指令+即时回复） ==========
+        HANDLE hPipe_c2s = CreateNamedPipeW(
+            pipe_name_client_to_server.c_str(),
+            PIPE_ACCESS_DUPLEX,               // 双向管道（服务端可读可写）
+            PIPE_TYPE_MESSAGE |               // 消息模式
+            PIPE_READMODE_MESSAGE |
+            PIPE_WAIT,                        // 阻塞模式
+            PIPE_UNLIMITED_INSTANCES, // 允许多个客户端连接（按需）
+            4096,                             // 输出缓冲区
+            4096,                             // 输入缓冲区
+            0,                                // 默认超时
+            NULL                              // 安全属性
+        );
+
+        if (hPipe_c2s == INVALID_HANDLE_VALUE) {
+            std::cerr << "创建c2s管道失败，错误码：" << GetLastError() << std::endl;
+            return;
+        }
+        std::cout << "c2s管道句柄创建成功，等待客户端连接..." << std::endl;
+
+        // ========== 2. 创建s2c管道（服务端只写：主动推送结果） ==========
+        //g_hPipe_s2c = CreateNamedPipeW(
+        //    pipe_name_server_to_client.c_str(),
+        //    PIPE_ACCESS_OUTBOUND,             // 服务端只写（关键：仅用于推送数据）
+        //    PIPE_TYPE_MESSAGE |               // 消息模式
+        //    PIPE_WAIT,                        // 阻塞模式
+        //    1,                                // 单实例
+        //    4096,                             // 输出缓冲区（仅这个生效）
+        //    0,                                // 输入缓冲区（无需，设为0）
+        //    0,                                // 默认超时
+        //    NULL                              // 安全属性
+        //);
+
+        g_hPipe_s2c = CreateNamedPipeW(
+            pipe_name_server_to_client.c_str(),
+            PIPE_ACCESS_DUPLEX,               // 双向管道（服务端可读可写）
+            PIPE_TYPE_MESSAGE |               // 消息模式
+            PIPE_READMODE_MESSAGE |
+            PIPE_WAIT,                        // 阻塞模式
+            PIPE_UNLIMITED_INSTANCES, // 允许多个客户端连接（按需）
+            4096,                             // 输出缓冲区
+            4096,                             // 输入缓冲区
+            0,                                // 默认超时
+            NULL                              // 安全属性
+        );
+
+        if (g_hPipe_s2c == INVALID_HANDLE_VALUE) {
+            std::cerr << "创建s2c管道失败，错误码：" << GetLastError() << std::endl;
+            CloseHandle(hPipe_c2s);
+            return;
+        }
+        std::cout << "s2c管道句柄创建成功，等待客户端连接..." << std::endl;
+
+        // ========== 主循环：处理管道连接 ==========
+        while (g_is_running) {
+            
+            // ---------- 处理c2s管道（接收指令+即时回复） ----------
+            BOOL c2s_connected = ConnectNamedPipe(hPipe_c2s, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+            if (c2s_connected) {
+                std::cout << "c2s管道：客户端已连接" << std::endl;
+                //handle_client_communication(hPipe_c2s, g_hPipe_s2c); // 处理指令+即时回复
+                //DisconnectNamedPipe(hPipe_c2s);        // 断开，等待下一次指令
+                //std::cout << "c2s管道：已断开客户端连接，等待新连接..." << std::endl;
+            }
+            else {
+                DWORD err = GetLastError();
+                if (err != ERROR_NO_DATA && err != ERROR_PIPE_CONNECTED) {
+                    std::cerr << "c2s管道连接失败，错误码：" << err << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+            }
+
+            // ---------- 处理s2c管道（常驻连接，供推送数据） ----------
+            if (g_hPipe_s2c == INVALID_HANDLE_VALUE) {
+                // 重新创建s2c管道（如果之前断开）
+                g_hPipe_s2c = CreateNamedPipeW(
+                    pipe_name_server_to_client.c_str(),
+                    PIPE_ACCESS_DUPLEX,               // 双向管道（服务端可读可写）
+                    PIPE_TYPE_MESSAGE |               // 消息模式
+                    PIPE_READMODE_MESSAGE |
+                    PIPE_WAIT,                        // 阻塞模式
+                    PIPE_UNLIMITED_INSTANCES, // 允许多个客户端连接（按需）
+                    4096,                             // 输出缓冲区
+                    4096,                             // 输入缓冲区
+                    0,                                // 默认超时
+                    NULL                              // 安全属性
+                );
+                if (g_hPipe_s2c == INVALID_HANDLE_VALUE) {
+                    std::cerr << "重新创建s2c管道失败，错误码：" << GetLastError() << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    continue;
+                }
+            }
+
+            BOOL s2c_connected = ConnectNamedPipe(g_hPipe_s2c, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+            if (s2c_connected) {
+                std::cout << "s2c管道：客户端已连接（持续推送模式）" << std::endl;
+                // s2c管道连接后不立即断开，保持连接供其他线程推送数据
+                // 断开逻辑由send_result_to_client失败时触发
+            }
+            else {
+                DWORD err = GetLastError();
+                if (err != ERROR_NO_DATA && err != ERROR_PIPE_CONNECTED) {
+                    std::cerr << "s2c管道连接失败，错误码：" << err << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    DisconnectNamedPipe(g_hPipe_s2c);
+                    CloseHandle(g_hPipe_s2c);
+                    g_hPipe_s2c = INVALID_HANDLE_VALUE;
+                }
+            }
+
+            if (c2s_connected && s2c_connected) {
+                handle_client_communication(hPipe_c2s, g_hPipe_s2c); // 处理指令+即时回复
+            }
+        }
+
+        // ========== 程序退出：清理资源 ==========
+        // 关闭c2s管道
+        if (hPipe_c2s != INVALID_HANDLE_VALUE) {
+            DisconnectNamedPipe(hPipe_c2s);
+            CloseHandle(hPipe_c2s);
+            std::cout << "hPipe_c2s管道句柄已关闭" << std::endl;
+        }
+
+        // 关闭s2c管道
+        //std::lock_guard<std::mutex> lock(g_s2c_pipe_mutex);
+        if (g_hPipe_s2c != INVALID_HANDLE_VALUE) {
+            DisconnectNamedPipe(g_hPipe_s2c);
+            CloseHandle(g_hPipe_s2c);
+            std::cout << "hPipe_s2c管道句柄已关闭" << std::endl;
+        }
+
+        g_is_running = false;
+        std::cout << "管道服务已退出" << std::endl;
     }
 }

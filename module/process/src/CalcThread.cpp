@@ -5,6 +5,10 @@
 
 #include "process/CalcThread.hpp"
 #include "barrage/barrage.hpp"
+#include <deception/deception.hpp>
+#include <transformation/transformation.hpp>
+#include <process/process.hpp>
+#include "process/CalcParamRes.hpp"
 
 #pragma comment(lib, "winmm.lib") 
 
@@ -13,14 +17,6 @@ namespace seven
 	// 静态成员变量初始化
 	std::shared_ptr<CalcProcessThread> CalcProcessThread::instance_ = nullptr;    // 静态成员变量，保存单例实例  
 	std::once_flag CalcProcessThread::flag_;					// 静态成员变量，用于同步访问 
-
-	// 新增：线程计算任务的参数结构体
-	struct CalcTaskParam {
-		HANDLE hPipe = nullptr;                  // 管道句柄
-		Json::Value input;                       // 输入JSON数据
-		Json::Value trajectory_result;           // 输出结果
-		std::atomic<bool> task_finished{ false };  // 任务是否完成
-	};
 
 	static std::vector<std::shared_ptr<CalcTaskParam>> g_task_queue;
 	// 全局任务队列（线程安全）
@@ -49,12 +45,15 @@ namespace seven
 		std::vector<std::thread*> pThreads_;     // 线程指针
 		AtomicIntArray ThdStats_;		  // 各个线程的状态
 		std::atomic<bool> bStartWork_;			  // 是否线程工作
+		// 新增：每个线程的中断请求标志（线程安全）
+		std::vector<bool> vecInterruptRequest_;
 
 		Pimple()
 			: iThreadNum_(GetNumThread())
 			, pThreads_(iThreadNum_, nullptr)
 			, ThdStats_(iThreadNum_)
 			, bStartWork_(false)
+			, vecInterruptRequest_(iThreadNum_, false) // 初始化中断标志为false
 		{
 			for (int i = 0; i < iThreadNum_; ++i)
 			{
@@ -69,12 +68,7 @@ namespace seven
 
 	CalcProcessThread::CalcProcessThread()
 		: pMem_(std::make_shared<Pimple>())
-		, vFinishFovNum_(pMem_->iThreadNum_)
 	{
-		for (int i = 0; i < vFinishFovNum_.size(); ++i)
-		{
-			vFinishFovNum_[i].SetValue(0);
-		}
 		this->Init();
 	}
 
@@ -102,7 +96,7 @@ namespace seven
 
 	void CalcProcessThread::Init()
 	{
-		for (size_t i = 0; i < pMem_->iThreadNum_; i++)
+		for (size_t i = 0; i < pMem_->iThreadNum_; ++i)
 		{
 			if (pMem_->pThreads_[i] != nullptr)
 			{
@@ -139,14 +133,12 @@ namespace seven
 
 	void CalcProcessThread::ReloadAllThread()
 	{
-		for (size_t i = 0; i < pMem_->iThreadNum_; i++)
+		for (size_t i = 0; i < pMem_->iThreadNum_; ++i)
 		{
 			if (pMem_->pThreads_[i] == nullptr)
 			{
 				continue;
 			}
-
-			vFinishFovNum_[i].SetValue(0);
 		}
 		return;
 	}
@@ -183,6 +175,9 @@ namespace seven
 		// 2. 创建任务参数
 		auto task_param = std::make_shared<CalcTaskParam>();
 		task_param->hPipe = hPipe;
+		task_param->max_frames = CalcParamManager::Ins().GetCalcParam().sim_time_;
+		task_param->run_frames = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+		task_param->serveral_plat = CalcParamManager::Ins().GetPlatform();
 		task_param->input = input;
 		task_param->task_finished = false;
 
@@ -199,7 +194,7 @@ namespace seven
 			g_task_cv.wait(lk, [&]() {
 				return task_param->task_finished.load(std::memory_order_acquire);
 				});
-			output = task_param->trajectory_result;
+			//output = task_param->trajectory_result;
 			return true;
 		}
 
@@ -239,46 +234,60 @@ namespace seven
 		return true;
 	}
 
-	bool CalcProcessThread::Interrupted(int noThread)
+	bool CalcProcessThread::Interrupted()
 	{
-		int threadState = pMem_->ThdStats_[noThread].GetValue();
-		if (threadState != static_cast<int>(Pimple::ThreadStatus::BUSY))
-		{
+		// 边界检查
+		/*if (noThread < 0 || noThread >= pMem_->iThreadNum_) {
+			std::cerr << "Interrupted: 线程编号无效，编号：" << noThread << std::endl;
 			return false;
-		}
+		}*/
 
-		pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::INTERRUPTED));
+		for (int noThread = 0; noThread < pMem_->pThreads_.size(); ++noThread)
+		{
+			if (pMem_->pThreads_[noThread] == nullptr)
+			{
+				continue;
+			}
+
+			int threadState = pMem_->ThdStats_[noThread].GetValue();
+			// 只有BUSY状态的线程才能被中断
+			if (threadState != static_cast<int>(Pimple::ThreadStatus::BUSY))
+			{
+				std::cerr << "Interrupted: 线程" << noThread << "非BUSY状态，当前状态：" << threadState << std::endl;
+				return false;
+			}
+
+			// 1. 设置中断请求标志（核心：让线程能感知到中断）
+			//pMem_->vecInterruptRequest_[noThread].store(true, std::memory_order_release);
+			pMem_->vecInterruptRequest_[noThread] = true;
+
+			// 2. 切换线程状态为INTERRUPTED
+			pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::INTERRUPTED));
+
+			std::cout << "已发起线程" << noThread << "中断请求" << std::endl;
+		}
 
 		return true;
 	}
 
-	bool CalcProcessThread::WaitForSingleThreadFinish(unsigned int _noThread, unsigned int _numFovs, int _dwMilliseconds)
+	// 新增：重置中断标志（线程完成/中断后清理）
+	void CalcProcessThread::ResetInterruptFlag(int noThread)
 	{
-		try
-		{
-			int Millis = 0;
-			while (true)
-			{
-				Millis++;
-				if (pMem_->ThdStats_[_noThread].GetValue() == static_cast<int>(Pimple::ThreadStatus::DORMANT)
-					&& vFinishFovNum_[_noThread].GetValue() >= _numFovs)
-				{
-					break;
-				}
-				std::this_thread::sleep_for(std::chrono::microseconds(1));
-
-				// 增加超时判断
-				if (Millis >= _dwMilliseconds && _dwMilliseconds > 0) {
-					return false;
-				}
-			}
+		if (noThread >= 0 && noThread < pMem_->iThreadNum_) {
+			//pMem_->vecInterruptRequest_[noThread].store(false, std::memory_order_release);
+			pMem_->vecInterruptRequest_[noThread] = false;
 		}
-		catch (std::exception& e)
-		{
+	}
+
+	// 新增：检查当前线程是否被中断（供ThreadFunc内部调用）
+	bool CalcProcessThread::IsInterrupted(int noThread)
+	{
+		if (noThread < 0 || noThread >= pMem_->iThreadNum_) {
 			return false;
 		}
-
-		return true;
+		// 双重检查：状态 + 标志
+		return (pMem_->ThdStats_[noThread].GetValue() == static_cast<int>(Pimple::ThreadStatus::INTERRUPTED)) || pMem_->vecInterruptRequest_[noThread];
+			/*pMem_->vecInterruptRequest_[noThread].load(std::memory_order_acquire);*/
 	}
 
 	void CalcProcessThread::ThreadFunc(int noThread)
@@ -319,7 +328,7 @@ namespace seven
 			{
 				auto start = std::chrono::high_resolution_clock::now();
 
-				// ========== 核心工作区：执行Barrage_Test_1计算任务 ==========
+				// ========== 核心工作区：执行计算任务 ==========
 				std::shared_ptr<CalcTaskParam> task_param;
 				{
 					std::lock_guard<std::mutex> task_lk(g_task_mutex);
@@ -330,8 +339,71 @@ namespace seven
 				}
 
 				if (task_param) {
+					CalcParamManager::Ins().GetCalcParam();
 					// 执行核心计算
-					Barrage_Test_1(task_param->input, task_param->trajectory_result);
+					int cmd_int = task_param->input.get("cmd", 4).asInt();
+					Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
+					if (type == Cmd_Type::Barrage)
+					{
+						while (true) {
+							//判断是否运行到最大帧数
+							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+							if (run_frames_cnt_ >= (task_param->max_frames - 1)) {
+								break;
+							}
+
+							//判断是否被打断
+							bool is_interrupted = IsInterrupted(noThread);
+							if (is_interrupted) {
+								// 重置中断标志
+								ResetInterruptFlag(noThread);
+								// 切换状态为DORMANT（而非直接退出）
+								pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::DORMANT));
+								break;
+							}
+							/*std::vector<InputPlatParam> server_platform_data;
+							for (int cnt = 0; cnt < task_param->serveral_plat.size(); cnt++)
+							{
+								server_platform_data.push_back(task_param->serveral_plat[cnt]);
+							}*/
+							//std::vector<InputPlatParam> server_platform_data = barrage_config.platsparam;
+							Barrage_Test_1(task_param);
+							sendResultData(task_param->hPipe, task_param->trajectory_result);
+						}
+					}
+					else if (type == Cmd_Type::Deception)
+					{
+						while (true) {
+							//判断是否运行到最大帧数
+							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+							if (run_frames_cnt_ >= (task_param->max_frames - 1)) {
+								break;
+							}
+
+							//判断是否被打断
+							bool is_interrupted = IsInterrupted(noThread);
+							if (is_interrupted) {
+								// 重置中断标志
+								ResetInterruptFlag(noThread);
+								// 切换状态为DORMANT（而非直接退出）
+								pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::DORMANT));
+								break;
+							}
+
+							/*std::vector<InputPlatParam> server_platform_data;
+							for (int cnt = 0; cnt < task_param->serveral_plat.size(); cnt++)
+							{
+								server_platform_data.push_back(task_param->serveral_plat[cnt]);
+							}*/
+							Deception_Use(task_param);
+							sendResultData(task_param->hPipe, task_param->trajectory_result);
+						}
+					}
+					else if (type == Cmd_Type::Transformation)
+					{
+						Transformation_Test(task_param->input, task_param->trajectory_result);
+						sendResultData(task_param->hPipe, task_param->trajectory_result);
+					}
 
 					// 标记任务完成
 					task_param->task_finished = true;
@@ -340,26 +412,18 @@ namespace seven
 
 				// 并行计算示例（保留原框架）
 				int num = 3;
-				concurrency::parallel_for(0, num, [&](size_t index)
-					{
-						// 可添加并行辅助计算逻辑
-					});
+				//concurrency::parallel_for(0, num, [&](size_t index)
+				//	{
+				//		// 可添加并行辅助计算逻辑
+				//	});
 
 				auto stop = std::chrono::high_resolution_clock::now();
 				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
 
+				// ========== 工作完成时间 ==========
 				std::string str = "CalcProcessThread::ThreadFunc(), Barrage_Test_1 Time Cost: [" +
 					std::to_string(duration) + "]ms";
 
-				// ========== 工作完成处理 ==========
-				// 完成的Fov数量+1
-				vFinishFovNum_[noThread].SetValue(vFinishFovNum_[noThread].GetValue() + 1);
-
-				stop = std::chrono::high_resolution_clock::now();
-				duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-
-				str = "CalcProcessThread::ThreadFunc() finish. Fov ID: " + std::to_string(noThread) +
-					", Total Time Cost: [" + std::to_string(duration) + "]ms";
 			}
 			catch (const std::exception& e)
 			{

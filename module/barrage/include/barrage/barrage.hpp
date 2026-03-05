@@ -32,6 +32,13 @@ namespace seven {
         double carrier_power;      // 卫星信号载波功率(W)
     };
 
+    //struct InputPlatParam {
+    //    UINT plat_id;       // 平台ID
+    //    LLA plat_initial_pos;
+    //    LLA cur_plat_pos;   // 平台经纬高(°/km)
+    //    LLA cur_plat_vec;   // 平台经纬高速度(°/km)
+    //};
+
     // 核心仿真配置结构体
     struct SimConfig {
         // 基础参数
@@ -62,11 +69,13 @@ namespace seven {
         double Bn = 2.046e6;       // 噪声带宽 (Hz)
         double G_ant = 10;         // 抗干扰波束成形增益 (dB)
 
-        UINT return_frames = 100;  // 返回结果数据帧数
+        //UINT return_frames = 100;  // 返回结果数据帧数
+        //UINT run_frames_cnt = 0;   // 运行帧数总数
 
         // 干扰源列表
         std::vector<JammerParam> jammers = {};
-        //Jammer_Level jammer_lev = Jammer_Level::Weak;
+        // 多平台参数
+        std::vector<InputPlatParam> platsparam = {};
 
         // 卫星参数
         SatelliteParam satellite;
@@ -143,7 +152,8 @@ namespace seven {
     };
 
     int SEVEN_EXPORTS Barrage_Test(Json::Value input, Json::Value& trajectory_result);
-    int SEVEN_EXPORTS Barrage_Test_1(Json::Value input, Json::Value& trajectory_result);
+    //int SEVEN_EXPORTS Barrage_Test_1(std::vector<InputPlatParam>& server_platform_data, Json::Value& trajectory_result);
+    int SEVEN_EXPORTS Barrage_Test_1(std::shared_ptr<CalcTaskParam>& task_param);
     int SEVEN_EXPORTS Barrage_CalcjammerArea(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range);
 
     static SimConfig barrage_config;

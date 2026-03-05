@@ -30,8 +30,9 @@ namespace seven
 		void StartWork(bool work);
 		bool SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output);
 		bool WakeUpAThread(int noThread);
-		bool Interrupted(int noThread);
-		bool WaitForSingleThreadFinish(unsigned int _noThread, unsigned int _numFovs = 0, int _dwMilliseconds = 10000);
+		bool Interrupted();
+		void ResetInterruptFlag(int noThread);
+		bool IsInterrupted(int noThread);
 
 	private:
 		void ThreadFunc(int noThread);
@@ -41,7 +42,6 @@ namespace seven
 		std::shared_ptr<Pimple> pMem_;
 		std::condition_variable m_con_var;
 		std::mutex m_mut;
-		AtomicIntArray vFinishFovNum_;
 
 	private:
 		static std::once_flag flag_;

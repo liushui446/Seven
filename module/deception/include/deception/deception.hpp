@@ -20,8 +20,6 @@ namespace seven {
             {115.4, 29.0, 1.0}
         };
 
-        UINT return_frames = 100;  // 返回结果数据帧数
-
         // 欺骗点位置
         LLA deception_pos = { 115.32, 29.15, 0.5 };
 
@@ -38,6 +36,9 @@ namespace seven {
             {135.0, 27.0, 20000},
             {95.0, 33.0, 20000}
         };
+
+        // 多平台参数
+        std::vector<InputPlatParam> platsparam = {};
     };
 
     // 航迹计算结果结构体
@@ -106,7 +107,8 @@ namespace seven {
     };
 
     int SEVEN_EXPORTS Deception_Test(Json::Value input, Json::Value& trajectory_result);
-    int SEVEN_EXPORTS Deception_Use(Json::Value input, Json::Value& trajectory_result);
+    //int SEVEN_EXPORTS Deception_Use(std::vector<InputPlatParam>& server_platform_data, Json::Value& trajectory_result);
+    int SEVEN_EXPORTS Deception_Use(std::shared_ptr<CalcTaskParam>& task_param);
     
     static SimParams deception_config;
 }

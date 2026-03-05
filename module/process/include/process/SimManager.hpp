@@ -4,6 +4,7 @@
 #include "core/CommonCore.hpp"
 //#include "json/json.h"
 #include <windows.h>
+#include "CalcThread.hpp"
 
 namespace seven {
 
@@ -39,6 +40,8 @@ namespace seven {
         //SimConfig config_;            // 仿真配置
         UINT sim_time_;               // 仿真时长
         std::mutex sim_mutex_;        // 线程安全锁
+
+        std::shared_ptr<CalcProcessThread> calc_thread_ptr;
     };
 
     // 全局仿真管理器实例（也可以根据需要改为局部/成员变量）

@@ -224,6 +224,50 @@ namespace seven
         LLA jammer_end_lla;          // 干扰结束点(LLA)
         UINT platform_id;            // 对应航迹平台ID
     };
+
+    struct InputPlatParam {
+        UINT plat_id;       // 平台ID
+        LLA plat_initial_pos;
+        LLA cur_plat_pos;   // 平台经纬高(°/km)
+        LLA cur_plat_vec;   // 平台经纬高速度(°/km)
+
+        InputPlatParam()
+            : plat_id(0)
+            , plat_initial_pos()
+            , cur_plat_pos()
+            , cur_plat_vec()
+        {
+        }
+
+        InputPlatParam& operator=(const InputPlatParam& other) {
+            this->plat_id = other.plat_id;
+            this->plat_initial_pos = other.plat_initial_pos;
+            this->cur_plat_pos = other.cur_plat_pos;
+            this->cur_plat_vec = other.cur_plat_vec;
+            return *this;
+        }
+    };
+
+    struct CalcParam {
+        UINT run_frames_cnt;
+        UINT return_frames;  // 返回结果数据帧数
+        UINT sim_time_;
+
+        CalcParam()
+            : run_frames_cnt(0)
+            , return_frames(100)
+            , sim_time_(800)
+        {
+        }
+
+        CalcParam& operator=(const CalcParam& other) {
+            this->run_frames_cnt = other.run_frames_cnt;
+            this->return_frames = other.return_frames;
+            this->sim_time_ = other.sim_time_;
+            return *this;
+        }
+    };
+
 }
 
 #endif
