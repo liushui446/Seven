@@ -41,4 +41,60 @@ namespace seven
         CalcParamManager& operator=(const CalcParamManager&) = delete;
         CalcParamManager& operator=(CalcParamManager&&) = delete;
     };
+
+    class SEVEN_EXPORTS ContextManager
+    {
+    public:
+        static ContextManager& Ins();
+
+    private:
+        ContextManager();
+        ~ContextManager();
+
+    public:
+
+        void SetFormationParams(const UAVFormationParams& params);
+
+        UAVFormationParams GetFormationParams();
+
+        void UpdateFormationParams(int num_uavs, double interval, double collision_radius, Formation_Type* trans_formation, Point2D* pos_center);
+
+        void SetInitialTrajectory(const std::vector<TrajectoryFrame>& trajectory);
+
+        std::vector<TrajectoryFrame> GetInitialTrajectory();
+
+        void AddInitialTrajectoryFrame(const TrajectoryFrame& frame);
+
+        void ClearInitialTrajectory();
+
+        void SetEndTrajectory(const std::vector<TrajectoryFrame>& trajectory);
+
+        std::vector<TrajectoryFrame> GetEndTrajectory();
+
+        void AddEndTrajectoryFrame(const TrajectoryFrame& frame);
+
+        void ClearEndTrajectory();
+
+        void SetBarrageParams(const SimConfig& params);
+        SimConfig GetBarrageParams();
+
+        void SetDeceptionParams(const SimParams& params);
+        SimParams GetDeceptionParams();
+
+    private:
+
+        UAVFormationParams m_formationParams;
+        vector<TrajectoryFrame> initial_trajectory;
+        vector<TrajectoryFrame> end_trajectory;
+
+        SimConfig barrage_config;  //barrage params
+        SimParams deception_config;
+        std::mutex mMutex_;
+
+    public:
+        ContextManager(const ContextManager&) = delete;
+        ContextManager(ContextManager&&) = delete;
+        ContextManager& operator=(const ContextManager&) = delete;
+        ContextManager& operator=(ContextManager&&) = delete;
+    };
 }

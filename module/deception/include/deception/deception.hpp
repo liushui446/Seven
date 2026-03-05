@@ -5,41 +5,7 @@
 
 namespace seven {
 
-    // 仿真参数结构体
-    struct SimParams {
-        // 基础阈值
-        double GDOP_threshold = 3.0;
-        double power_ratio_threshold = 5.0;  // 功率比阈值(dB)
-
-        // 干扰装备参数
-        int jammer_num = 4;
-        std::vector<LLA> jammer_pos = {
-            {115.2, 29.0, 1.0},
-            {115.3, 29.1, 1.0},
-            {115.1, 29.2, 1.0},
-            {115.4, 29.0, 1.0}
-        };
-
-        // 欺骗点位置
-        LLA deception_pos = { 115.32, 29.15, 0.5 };
-
-        // 卫星参数(默认10颗)
-        std::vector<LLA> satellite_pos = {
-            {120.0, 30.0, 20000},
-            {110.0, 35.0, 20000},
-            {130.0, 25.0, 20000},
-            {105.0, 28.0, 20000},
-            {140.0, 32.0, 20000},
-            {100.0, 22.0, 20000},
-            {125.0, 40.0, 20000},
-            {115.0, 20.0, 20000},
-            {135.0, 27.0, 20000},
-            {95.0, 33.0, 20000}
-        };
-
-        // 多平台参数
-        std::vector<InputPlatParam> platsparam = {};
-    };
+    
 
     // 航迹计算结果结构体
     struct TrackResult {
@@ -108,9 +74,9 @@ namespace seven {
 
     int SEVEN_EXPORTS Deception_Test(Json::Value input, Json::Value& trajectory_result);
     //int SEVEN_EXPORTS Deception_Use(std::vector<InputPlatParam>& server_platform_data, Json::Value& trajectory_result);
-    int SEVEN_EXPORTS Deception_Use(std::shared_ptr<CalcTaskParam>& task_param);
+    int SEVEN_EXPORTS Deception_Use(CalcTempParam& task_param, SimParams& deception_config);
     
-    static SimParams deception_config;
+    //static SimParams deception_config;
 }
 
 #endif

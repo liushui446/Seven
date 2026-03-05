@@ -467,12 +467,13 @@ namespace seven {
         return 0;
     }
 
-    int Deception_Use(std::shared_ptr<CalcTaskParam>& task_param) {
+    int Deception_Use(CalcTempParam& task_param, SimParams& deception_config) {
 
         //Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
 
         // 1. 创建计算实例
         GNSSDeceptionError gnss_error;
+        gnss_error.set_params(deception_config);
 
         // 2. (可选)自定义参数
 
@@ -496,22 +497,22 @@ namespace seven {
         //}
 
         // 解析多平台航迹数据
-        for (int i = 0; i < task_param->serveral_plat.size(); i++) {
-            UINT platform_id = task_param->serveral_plat[i].plat_id;
+        for (int i = 0; i < task_param.serveral_plat.size(); i++) {
+            UINT platform_id = task_param.serveral_plat[i].plat_id;
             
             // 转换JSON航迹点到内部格式
             std::vector<LLA> track_points;
-            for (int j = 0; j < task_param->return_frames; j++) {
+            for (int j = 0; j < task_param.return_frames; j++) {
 
                 LLA target_pos;
-                target_pos.lon_deg = task_param->serveral_plat[i].cur_plat_pos.lon_deg + task_param->serveral_plat[i].cur_plat_vec.lon_deg * j;
-                target_pos.lat_deg = task_param->serveral_plat[i].cur_plat_pos.lat_deg + task_param->serveral_plat[i].cur_plat_vec.lat_deg * j;
-                target_pos.h_m = task_param->serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param->serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
+                target_pos.lon_deg = task_param.serveral_plat[i].cur_plat_pos.lon_deg + task_param.serveral_plat[i].cur_plat_vec.lon_deg * j;
+                target_pos.lat_deg = task_param.serveral_plat[i].cur_plat_pos.lat_deg + task_param.serveral_plat[i].cur_plat_vec.lat_deg * j;
+                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param.serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
                 track_points.push_back(target_pos);
 
-                if (j == task_param->return_frames - 1)
+                if (j == task_param.return_frames - 1)
                 {
-                    task_param->serveral_plat[i].cur_plat_pos = target_pos + task_param->serveral_plat[i].cur_plat_vec;
+                    task_param.serveral_plat[i].cur_plat_pos = target_pos + task_param.serveral_plat[i].cur_plat_vec;
                 }
             }
 
@@ -519,7 +520,7 @@ namespace seven {
             std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
             // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
-            task_param->trajectory_result.clear(); // 可选，复用对象时建议保留
+            task_param.trajectory_result.clear(); // 可选，复用对象时建议保留
 
             // 构造该平台的结果
             Json::Value platform_result;
@@ -531,7 +532,7 @@ namespace seven {
                 Json::Value track_point;      // 单个航迹点的JSON对象
 
                 // 基础字段：航迹点序号（和原打印一致，i+1）
-                track_point["index"] = static_cast<int>(i + 1); // size_t转int，适配JsonCpp
+                track_point["index"] = static_cast<int>(task_param.run_frames + i); // size_t转int，适配JsonCpp
 
                 // 目标位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
                 track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // 经度(°)
@@ -554,10 +555,10 @@ namespace seven {
                 // 将当前航迹点加入数组
                 track_results.append(track_point);
             }
-            task_param->trajectory_result.append(platform_result);
+            task_param.trajectory_result.append(platform_result);
         }
         //运行帧数计算
-        task_param->run_frames = task_param->run_frames + task_param->run_frames;
+        task_param.run_frames = task_param.run_frames + task_param.run_frames;
         return 0;
     }
 

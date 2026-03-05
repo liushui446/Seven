@@ -33,8 +33,26 @@ namespace seven {
             // 构造返回结果（干扰源位置JSON）
             result.clear();
             // 初始化配置
-            Json::Value& jammer_list = result["jammer_list"];
-            init_sim_config(input, jammer_list);
+            Json::Value intial_data;
+            Cmd_Type type = static_cast<Cmd_Type>(input.get("cmd", 4).asInt());
+            /*if (type == Cmd_Type::Transformation)
+            {
+                intial_data = result["node_list"];
+            }
+            else
+            {
+                intial_data = result["jammer_list"];
+            }*/
+            init_sim_config(input, intial_data);
+
+            if (type == Cmd_Type::Transformation)
+            {
+                result["node_list"] = intial_data;
+            }
+            else
+            {
+                result["jammer_list"] == intial_data;
+            }
 
             if (calc_thread_ptr == nullptr)
             {
@@ -106,20 +124,31 @@ namespace seven {
             // 更新仿真状态
             sim_state_ == SimState::RUNNING;
 
-            GNSSJammerSim sim;
-
             // 3. 提交任务（内部会自动唤醒线程）
             Json::Value output;
             bool ret;
             if (type == Cmd_Type::Barrage)
             {
-                CalcParamManager::Ins().SwapPlatform(barrage_config.platsparam);
+                vector<InputPlatParam> temp_platsparam_ = ContextManager::Ins().GetBarrageParams().platsparam;
+                CalcParamManager::Ins().SwapPlatform(temp_platsparam_);
                 ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
             }
             else if (type == Cmd_Type::Deception)
             {
-                CalcParamManager::Ins().SwapPlatform(deception_config.platsparam);
+                vector<InputPlatParam> temp_platsparam_ = ContextManager::Ins().GetDeceptionParams().platsparam;
+                CalcParamManager::Ins().SwapPlatform(temp_platsparam_);
                 ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
+            }
+            else if (type == Cmd_Type::Transformation)
+            {
+                ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
+                /*UAVFormationParams params = ContextManager::Ins().GetFormationParams();
+                vector<TrajectoryFrame> initial_trajectory = ContextManager::Ins().GetInitialTrajectory();
+                vector<TrajectoryFrame> end_trajectory = ContextManager::Ins().GetEndTrajectory();
+                Transformation_Use(params, initial_trajectory, end_trajectory, input, result);
+                ContextManager::Ins().SetFormationParams(params);
+                ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
+                ContextManager::Ins().SetEndTrajectory(end_trajectory);*/
             }
             if (ret) {}
 
@@ -201,6 +230,7 @@ namespace seven {
     // 初始化仿真配置
     void SimManager::init_sim_config(const Json::Value& input, Json::Value& result) {
 
+        SimConfig barrage_config;
         //干扰源位置初始化
         Cmd_Type type = static_cast<Cmd_Type>(input.get("cmd", 4).asInt());
         if (type == Cmd_Type::Barrage)
@@ -312,6 +342,7 @@ namespace seven {
 
                 barrage_config.platsparam.push_back(plat_data);
             }
+            ContextManager::Ins().SetBarrageParams(barrage_config);
             std::cout << "platsparam size:" << to_string(barrage_config.platsparam.size()) << std::endl;
         }
         else if (type == Cmd_Type::Deception)
@@ -322,6 +353,7 @@ namespace seven {
             UINT return_frames = input.get("return_frames", 100).asInt();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
+            SimParams deception_config;
             // 1.设置beta参数
             if (jammer_strength == Jammer_Level::High) {
                 
@@ -393,19 +425,35 @@ namespace seven {
 
                 deception_config.platsparam.push_back(plat_data);
             }
+            ContextManager::Ins().SetDeceptionParams(deception_config);
             std::cout << "platsparam size:" << to_string(deception_config.platsparam.size()) << std::endl;
         }
         else if (type == Cmd_Type::Transformation)
         {
+            vector<TrajectoryFrame> initial_trajectory;
+            vector<TrajectoryFrame> end_trajectory;
+            UAVFormationParams formation_param_;
             formation_param_.num_uavs = input["num_uavs"].asInt();
             formation_param_.interval = input["interval"].asDouble();
             formation_param_.collision_radius = input["collision_radius"].asDouble();
             //formation_param_.switch_interval = input["switch_interval"].asDouble();
             formation_param_.max_frames = input["max_frames"].asInt();
             formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
-            formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
+            //formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
 
-            Init_formation(result);
+            std::cout << "===== 解析JSON取值验证 =====" << std::endl;
+            std::cout << "input[\"num_uavs\"] = " << input["num_uavs"].asInt() << std::endl;
+            std::cout << "input[\"interval\"] = " << input["interval"].asDouble() << std::endl;
+            std::cout << "input[\"formation\"] = " << input["formation"].asInt() << std::endl;
+            std::cout << "===== 赋值后formation_param_数值 =====" << std::endl;
+            std::cout << "num_uavs = " << formation_param_.num_uavs << std::endl;
+            std::cout << "interval = " << formation_param_.interval << std::endl;
+            std::cout << "formation = " << static_cast<int>(formation_param_.trans_formation) << std::endl;
+
+            Init_formation(formation_param_, initial_trajectory, end_trajectory, result);
+            ContextManager::Ins().SetFormationParams(formation_param_);
+            ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
+            ContextManager::Ins().SetEndTrajectory(end_trajectory);
         }
     }
     

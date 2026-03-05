@@ -621,222 +621,222 @@ namespace seven {
     }
 
     // ========================= 3. 使用示例 =========================
-    int Barrage_Test(Json::Value input, Json::Value& trajectory_result) {
+    //int Barrage_Test(Json::Value input, Json::Value& trajectory_result) {
 
-        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+    //    Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
 
-        // 若存在"jammer_num"则取其整数值，不存在则返回默认值0（可自定义）
-        int jammer_num = input.get("jammer_num", 1).asInt();
+    //    // 若存在"jammer_num"则取其整数值，不存在则返回默认值0（可自定义）
+    //    int jammer_num = input.get("jammer_num", 1).asInt();
 
-        // 1. 初始化配置
-        //SimConfig barrage_config;
-        /*if (jammer_strength == Jammer_Level::High)
-        {
-            barrage_config.beta = 5e4;
-        }
-        else if (jammer_strength == Jammer_Level::Middle)
-        {
-            barrage_config.beta = 9e4;
-        }
-        else if (jammer_strength == Jammer_Level::Low)
-        {
-            barrage_config.beta = 2e5;
-        }*/
+    //    // 1. 初始化配置
+    //    //SimConfig barrage_config;
+    //    /*if (jammer_strength == Jammer_Level::High)
+    //    {
+    //        barrage_config.beta = 5e4;
+    //    }
+    //    else if (jammer_strength == Jammer_Level::Middle)
+    //    {
+    //        barrage_config.beta = 9e4;
+    //    }
+    //    else if (jammer_strength == Jammer_Level::Low)
+    //    {
+    //        barrage_config.beta = 2e5;
+    //    }*/
 
-        //干扰源添加
-        for (int i = 0; i < jammer_num; i++)
-        {
-            //干扰位置计算
+    //    //干扰源添加
+    //    for (int i = 0; i < jammer_num; i++)
+    //    {
+    //        //干扰位置计算
 
 
-            // 配置干扰源
-            JammerParam jammer;
-            jammer.pos = { 120.0, 27.63, 8.3 };
-            jammer.power = 10.0; // W
-            jammer.type = "continuous_wave";
-            jammer.bandwidth = 20e6;
-            jammer.freq = GNSS_FC;
-            barrage_config.jammers.push_back(jammer);
-        }
+    //        // 配置干扰源
+    //        JammerParam jammer;
+    //        jammer.pos = { 120.0, 27.63, 8.3 };
+    //        jammer.power = 10.0; // W
+    //        jammer.type = "continuous_wave";
+    //        jammer.bandwidth = 20e6;
+    //        jammer.freq = GNSS_FC;
+    //        barrage_config.jammers.push_back(jammer);
+    //    }
 
-        // 配置卫星参数
-        barrage_config.satellite.carrier_power = 1e-16;
-        barrage_config.satellite.sat_pos = {
-            {125.0, 30.0, 5000},
-            {115.0, 35.0, 5000},
-            {130.0, 25.0, 5000},
-            {110.0, 28.0, 5000}
-        };
+    //    // 配置卫星参数
+    //    barrage_config.satellite.carrier_power = 1e-16;
+    //    barrage_config.satellite.sat_pos = {
+    //        {125.0, 30.0, 5000},
+    //        {115.0, 35.0, 5000},
+    //        {130.0, 25.0, 5000},
+    //        {110.0, 28.0, 5000}
+    //    };
 
-        // 配置干扰源
-        //JammerParam jammer1;
-        //jammer1.pos = {120.0, 27.63, 8.3};
-        //jammer1.power = 10.0; // W
-        //jammer1.type = "continuous_wave";
-        //jammer1.bandwidth = 20e6;
-        //jammer1.freq = GNSS_FC;
-        //barrage_config.jammers.push_back(jammer1);
+    //    // 配置干扰源
+    //    //JammerParam jammer1;
+    //    //jammer1.pos = {120.0, 27.63, 8.3};
+    //    //jammer1.power = 10.0; // W
+    //    //jammer1.type = "continuous_wave";
+    //    //jammer1.bandwidth = 20e6;
+    //    //jammer1.freq = GNSS_FC;
+    //    //barrage_config.jammers.push_back(jammer1);
 
-        /*JammerParam jammer2;
-        jammer2.pos = { 119.75, 27.64, 8.3 };
-        jammer2.power = 10.0;
-        jammer2.type = "continuous_wave";
-        jammer2.bandwidth = 1e6;
-        jammer2.freq = GNSS_FC;
-        barrage_config.jammers.push_back(jammer2);*/
+    //    /*JammerParam jammer2;
+    //    jammer2.pos = { 119.75, 27.64, 8.3 };
+    //    jammer2.power = 10.0;
+    //    jammer2.type = "continuous_wave";
+    //    jammer2.bandwidth = 1e6;
+    //    jammer2.freq = GNSS_FC;
+    //    barrage_config.jammers.push_back(jammer2);*/
 
-        // 2. 待处理的航迹数据
-        // 解析多平台航迹数据
-        const Json::Value& platform_tracks = input["platform_tracks"];
+    //    // 2. 待处理的航迹数据
+    //    // 解析多平台航迹数据
+    //    const Json::Value& platform_tracks = input["platform_tracks"];
 
-        std::vector<LLA> track_points = {
-            {119.045, 27.2233, 1.3},   // 航迹点1
-        };
+    //    std::vector<LLA> track_points = {
+    //        {119.045, 27.2233, 1.3},   // 航迹点1
+    //    };
 
-        LLA target_velocity = { 0.005, 0.003, 0 };
+    //    LLA target_velocity = { 0.005, 0.003, 0 };
 
-        UINT sim_time = 400;  // 仿真时长(s)200
-        for (int step = 0; step < sim_time; ++step)
-        {
-            LLA target_pos;
-            target_pos = track_points[0] + target_velocity * step;
-            track_points.push_back(target_pos);
-        }
+    //    UINT sim_time = 400;  // 仿真时长(s)200
+    //    for (int step = 0; step < sim_time; ++step)
+    //    {
+    //        LLA target_pos;
+    //        target_pos = track_points[0] + target_velocity * step;
+    //        track_points.push_back(target_pos);
+    //    }
 
-        // 3. 初始化仿真类并计算
-        GNSSJammerSim sim;
-        std::vector<BarrageTrackResult> results = sim.batch_calc(track_points, barrage_config);
+    //    // 3. 初始化仿真类并计算
+    //    GNSSJammerSim sim;
+    //    std::vector<BarrageTrackResult> results = sim.batch_calc(track_points, barrage_config);
 
-        // 4. 输出结果
-        trajectory_result.clear();
+    //    // 4. 输出结果
+    //    trajectory_result.clear();
 
-        bool last_unlock_status = false;     //上一次失锁状态
-        bool cur_unlock_status = false;     //当前失锁状态
-        ECEF jammer_centre;
-        ECEF jammer_start;                   //干扰开始点
-        ECEF jammer_end;                     //干扰结束点
-        double r_jammer = 0;                     //干扰半径
+    //    bool last_unlock_status = false;     //上一次失锁状态
+    //    bool cur_unlock_status = false;     //当前失锁状态
+    //    ECEF jammer_centre;
+    //    ECEF jammer_start;                   //干扰开始点
+    //    ECEF jammer_end;                     //干扰结束点
+    //    double r_jammer = 0;                     //干扰半径
 
-        //干扰点信息
-        Json::Value& jammer_list = trajectory_result["jammer_list"];
-        for (int cnt = 0; cnt < barrage_config.jammers.size(); cnt++)
-        {
-            Json::Value jammer_mes;
-            jammer_mes["id"] = cnt + 1;
-            jammer_mes["pos_lla"]["lon_deg"] = barrage_config.jammers[cnt].pos.lon_deg;
-            jammer_mes["pos_lla"]["lat_deg"] = barrage_config.jammers[cnt].pos.lat_deg;
-            jammer_mes["pos_lla"]["h_m"] = barrage_config.jammers[cnt].pos.h_m * 1000;      //km->m
+    //    //干扰点信息
+    //    Json::Value& jammer_list = trajectory_result["jammer_list"];
+    //    for (int cnt = 0; cnt < barrage_config.jammers.size(); cnt++)
+    //    {
+    //        Json::Value jammer_mes;
+    //        jammer_mes["id"] = cnt + 1;
+    //        jammer_mes["pos_lla"]["lon_deg"] = barrage_config.jammers[cnt].pos.lon_deg;
+    //        jammer_mes["pos_lla"]["lat_deg"] = barrage_config.jammers[cnt].pos.lat_deg;
+    //        jammer_mes["pos_lla"]["h_m"] = barrage_config.jammers[cnt].pos.h_m * 1000;      //km->m
 
-            /*ECEF tmp_pos = sim.lla_to_ecef(barrage_config.jammers[cnt].pos);
-            jammer_centre.X = tmp_pos.X;
-            jammer_centre.Y = tmp_pos.Y;
-            jammer_centre.Z = tmp_pos.Z;*/
+    //        /*ECEF tmp_pos = sim.lla_to_ecef(barrage_config.jammers[cnt].pos);
+    //        jammer_centre.X = tmp_pos.X;
+    //        jammer_centre.Y = tmp_pos.Y;
+    //        jammer_centre.Z = tmp_pos.Z;*/
 
-            jammer_list.append(jammer_mes);
-        }
+    //        jammer_list.append(jammer_mes);
+    //    }
 
-        Json::Value& track_points_json = trajectory_result["track_points"];
-        // 遍历航迹点结果，写入JSON
-        for (int i = 0; i < results.size(); ++i) {
-            // 定义单个航迹点的JSON对象，存储当前点的所有参数
-            Json::Value track_point;
+    //    Json::Value& track_points_json = trajectory_result["track_points"];
+    //    // 遍历航迹点结果，写入JSON
+    //    for (int i = 0; i < results.size(); ++i) {
+    //        // 定义单个航迹点的JSON对象，存储当前点的所有参数
+    //        Json::Value track_point;
 
-            // 航迹点序号(和原打印一致，i+1)
-            track_point["step"] = i + 1;
-            //目标点
-            track_point["pos_tar_lla"]["lon_deg"] = track_points[i].lon_deg;
-            track_point["pos_tar_lla"]["lat_deg"] = track_points[i].lat_deg;
-            track_point["pos_tar_lla"]["h_m"] = track_points[i].h_m * 1000;
+    //        // 航迹点序号(和原打印一致，i+1)
+    //        track_point["step"] = i + 1;
+    //        //目标点
+    //        track_point["pos_tar_lla"]["lon_deg"] = track_points[i].lon_deg;
+    //        track_point["pos_tar_lla"]["lat_deg"] = track_points[i].lat_deg;
+    //        track_point["pos_tar_lla"]["h_m"] = track_points[i].h_m * 1000;
 
-            // 载噪比(dB-Hz)
-            track_point["cn0_dbhz"] = results[i].C_NJ_dB;
-            // 干信比(dB)
-            track_point["js_dB"] = results[i].J_S_dB;
-            // 载波环误差(°)
-            track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
-            // 码环误差（保留原变量名，无单位则不标注）
-            track_point["code_loop_error"] = results[i].sigma_jdll;
-            // 失锁标志
-            track_point["unlock_flag_bool"] = results[i].unlock_flag;  // 布尔值
+    //        // 载噪比(dB-Hz)
+    //        track_point["cn0_dbhz"] = results[i].C_NJ_dB;
+    //        // 干信比(dB)
+    //        track_point["js_dB"] = results[i].J_S_dB;
+    //        // 载波环误差(°)
+    //        track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
+    //        // 码环误差（保留原变量名，无单位则不标注）
+    //        track_point["code_loop_error"] = results[i].sigma_jdll;
+    //        // 失锁标志
+    //        track_point["unlock_flag_bool"] = results[i].unlock_flag;  // 布尔值
 
-            // 经纬度高定位误差（°/°/m，修正原代码km标注错误，h_m是米，贴合变量定义）
-            track_point["pos_error_lla"]["lon_deg"] = results[i].pos_error.lon_deg;
-            track_point["pos_error_lla"]["lat_deg"] = results[i].pos_error.lat_deg;
-            track_point["pos_error_lla"]["h_m"] = results[i].pos_error.h_m * 1000;
+    //        // 经纬度高定位误差（°/°/m，修正原代码km标注错误，h_m是米，贴合变量定义）
+    //        track_point["pos_error_lla"]["lon_deg"] = results[i].pos_error.lon_deg;
+    //        track_point["pos_error_lla"]["lat_deg"] = results[i].pos_error.lat_deg;
+    //        track_point["pos_error_lla"]["h_m"] = results[i].pos_error.h_m * 1000;
 
-            // X/Y/Z定位误差（米）
-            track_point["pos_error_xyz_m"]["X"] = results[i].pos_error_m.X;
-            track_point["pos_error_xyz_m"]["Y"] = results[i].pos_error_m.Y;
-            track_point["pos_error_xyz_m"]["Z"] = results[i].pos_error_m.Z;
+    //        // X/Y/Z定位误差（米）
+    //        track_point["pos_error_xyz_m"]["X"] = results[i].pos_error_m.X;
+    //        track_point["pos_error_xyz_m"]["Y"] = results[i].pos_error_m.Y;
+    //        track_point["pos_error_xyz_m"]["Z"] = results[i].pos_error_m.Z;
 
-            // GDOP值
-            //track_point["gdop"] = results[i].gdop;
+    //        // GDOP值
+    //        //track_point["gdop"] = results[i].gdop;
 
-            // 将当前航迹点对象加入数组，trajectory_result最终是JSON数组
-            track_points_json.append(track_point);
+    //        // 将当前航迹点对象加入数组，trajectory_result最终是JSON数组
+    //        track_points_json.append(track_point);
 
-            last_unlock_status = cur_unlock_status;
-            cur_unlock_status = results[i].unlock_flag;
-            if (!last_unlock_status || cur_unlock_status)
-            {
-                ECEF tmp_pos = sim.lla_to_ecef(track_points[i]);
-                jammer_start.X = tmp_pos.X;
-                jammer_start.Y = tmp_pos.Y;
-                jammer_start.Z = tmp_pos.Z;
-            }
-            else if (last_unlock_status || !cur_unlock_status)
-            {
-                if (i > 0)
-                {
-                    ECEF tmp_pos = sim.lla_to_ecef(track_points[i - 1]);
-                    jammer_end.X = tmp_pos.X;
-                    jammer_end.Y = tmp_pos.Y;
-                    jammer_end.Z = tmp_pos.Z;
+    //        last_unlock_status = cur_unlock_status;
+    //        cur_unlock_status = results[i].unlock_flag;
+    //        if (!last_unlock_status || cur_unlock_status)
+    //        {
+    //            ECEF tmp_pos = sim.lla_to_ecef(track_points[i]);
+    //            jammer_start.X = tmp_pos.X;
+    //            jammer_start.Y = tmp_pos.Y;
+    //            jammer_start.Z = tmp_pos.Z;
+    //        }
+    //        else if (last_unlock_status || !cur_unlock_status)
+    //        {
+    //            if (i > 0)
+    //            {
+    //                ECEF tmp_pos = sim.lla_to_ecef(track_points[i - 1]);
+    //                jammer_end.X = tmp_pos.X;
+    //                jammer_end.Y = tmp_pos.Y;
+    //                jammer_end.Z = tmp_pos.Z;
 
-                    double r_1 = sqrt(pow((jammer_centre.X - jammer_start.X), 2) + pow((jammer_centre.Y - jammer_start.Y), 2) + pow((jammer_centre.Z - jammer_start.Z), 2));
-                    double r_2 = sqrt(pow((jammer_centre.X - jammer_end.X), 2) + pow((jammer_centre.Y - jammer_end.Y), 2) + pow((jammer_centre.Z - jammer_end.Z), 2));
-                    r_jammer = (r_1 + r_2) / 2;
-                }
-            }
-        }
+    //                double r_1 = sqrt(pow((jammer_centre.X - jammer_start.X), 2) + pow((jammer_centre.Y - jammer_start.Y), 2) + pow((jammer_centre.Z - jammer_start.Z), 2));
+    //                double r_2 = sqrt(pow((jammer_centre.X - jammer_end.X), 2) + pow((jammer_centre.Y - jammer_end.Y), 2) + pow((jammer_centre.Z - jammer_end.Z), 2));
+    //                r_jammer = (r_1 + r_2) / 2;
+    //            }
+    //        }
+    //    }
 
-        //干扰范围
-        Json::Value& jammer_area_json = trajectory_result["jammer area"];
-        LLA jammer_pos_centra = sim.ecef_to_lla(jammer_centre);
-        jammer_pos_centra.h_m = jammer_pos_centra.h_m * 1000;
-        jammer_area_json["jammer pos centra"]["lon_deg"] = jammer_pos_centra.lon_deg;
-        jammer_area_json["jammer pos centra"]["lat_deg"] = jammer_pos_centra.lat_deg;
-        jammer_area_json["jammer pos centra"]["h_m"] = jammer_pos_centra.h_m;
-        jammer_area_json["jammer r"] = r_jammer; //m
+    //    //干扰范围
+    //    Json::Value& jammer_area_json = trajectory_result["jammer area"];
+    //    LLA jammer_pos_centra = sim.ecef_to_lla(jammer_centre);
+    //    jammer_pos_centra.h_m = jammer_pos_centra.h_m * 1000;
+    //    jammer_area_json["jammer pos centra"]["lon_deg"] = jammer_pos_centra.lon_deg;
+    //    jammer_area_json["jammer pos centra"]["lat_deg"] = jammer_pos_centra.lat_deg;
+    //    jammer_area_json["jammer pos centra"]["h_m"] = jammer_pos_centra.h_m;
+    //    jammer_area_json["jammer r"] = r_jammer; //m
 
-        return 0;
-    }
+    //    return 0;
+    //}
 
-    int Barrage_Test_1(std::shared_ptr<CalcTaskParam>& task_param) {
+    int Barrage_Test_1(CalcTempParam& task_param, SimConfig barrage_config) {
 
         // 1. 待处理的航迹数据
 
         //初始化仿真类
         GNSSJammerSim sim;
-        task_param->trajectory_result.clear();
+        task_param.trajectory_result.clear();
 
-        for (int i = 0; i < task_param->serveral_plat.size(); i++) {
-            UINT platform_id = task_param->serveral_plat[i].plat_id;
+        for (int i = 0; i < task_param.serveral_plat.size(); i++) {
+            UINT platform_id = task_param.serveral_plat[i].plat_id;
 
             // 转换JSON航迹点到内部格式
             std::vector<LLA> track_points;
-            for (int j = 0; j < task_param->return_frames; j++) {
+            for (int j = 0; j < task_param.return_frames; j++) {
 
                 LLA target_pos;
-                target_pos.lon_deg = task_param->serveral_plat[i].cur_plat_pos.lon_deg + task_param->serveral_plat[i].cur_plat_vec.lon_deg * j;
-                target_pos.lat_deg = task_param->serveral_plat[i].cur_plat_pos.lat_deg + task_param->serveral_plat[i].cur_plat_vec.lat_deg * j;
-                target_pos.h_m = task_param->serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param->serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
+                target_pos.lon_deg = task_param.serveral_plat[i].cur_plat_pos.lon_deg + task_param.serveral_plat[i].cur_plat_vec.lon_deg * j;
+                target_pos.lat_deg = task_param.serveral_plat[i].cur_plat_pos.lat_deg + task_param.serveral_plat[i].cur_plat_vec.lat_deg * j;
+                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param.serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
                 track_points.push_back(target_pos);
 
                 //记录运行固定帧数后的位置
-                if (j == task_param->return_frames - 1)
+                if (j == task_param.return_frames - 1)
                 {
-                    task_param->serveral_plat[i].cur_plat_pos = target_pos + task_param->serveral_plat[i].cur_plat_vec;
+                    task_param.serveral_plat[i].cur_plat_pos = target_pos + task_param.serveral_plat[i].cur_plat_vec;
                 }
             }
 
@@ -857,7 +857,7 @@ namespace seven {
                 Json::Value track_point;
 
                 // 航迹点序号(和原打印一致，i+1)
-                track_point["step"] = i + 1;
+                track_point["step"] = task_param.run_frames + i;
                 //目标点
                 track_point["pos_tar_lla"]["lon_deg"] = track_points[i].lon_deg;
                 track_point["pos_tar_lla"]["lat_deg"] = track_points[i].lat_deg;
@@ -890,10 +890,10 @@ namespace seven {
                 // 将当前航迹点对象加入数组，trajectory_result最终是JSON数组
                 track_results.append(track_point);
             }
-            task_param->trajectory_result.append(platform_result);
+            task_param.trajectory_result.append(platform_result);
         }
         //运行帧数计算
-        task_param->run_frames = task_param->run_frames + task_param->return_frames;
+        task_param.run_frames = task_param.run_frames + task_param.return_frames;
         return 0;
     }
 

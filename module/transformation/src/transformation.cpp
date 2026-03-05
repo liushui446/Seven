@@ -638,12 +638,17 @@ namespace seven {
     * @brief 构造函数（初始化参数）
     */
     UAVFormationTransformer::UAVFormationTransformer(){
+        
+    }
+
+    void UAVFormationTransformer::InitialParams(UAVFormationParams& forparams_)
+    {
         // 初始化位置（默认第一个队形）
-        params_ = formation_param_;
+        params_ = forparams_;
         current_positions_.resize(params_.num_uavs);
     }
 
-    void UAVFormationTransformer::InitialFormation(){
+    Formation_Type UAVFormationTransformer::InitialFormation(){
 
         current_positions_ = generateFormation(params_.trans_formation);
         current_positions_ = checkCollision(current_positions_);
@@ -653,7 +658,6 @@ namespace seven {
         // 记录轨迹
         double current_time = 0;
         Formation_Type current_formation = params_.trans_formation;
-        formation_param_.current_formation = current_formation;
 
         for (int uav_id = 0; uav_id < params_.num_uavs; ++uav_id) {
             trajectory_.addFrame(0, current_time, uav_id, current_formation, current_positions_[uav_id]);
@@ -662,14 +666,16 @@ namespace seven {
         Formation_Type new_formation = params_.trans_formation;
         string new_for_str = formationToStr(new_formation);
         std::cout << "Switched to " << new_for_str << " formation at frame " << 0 << std::endl;
+        return current_formation;
     }
 
     /**
         * @brief 运行编队变换计算（生成轨迹）
         */
-    void UAVFormationTransformer::runTransformation() {
+    Formation_Type UAVFormationTransformer::runTransformation(vector<TrajectoryFrame>& end_trajectory) {
         //int switch_frame_interval = static_cast<int>(params_.switch_interval * params_.fps);
 
+        Formation_Type current_formation = params_.trans_formation;
         for (frame_count_ = 0; frame_count_ < params_.max_frames; ++frame_count_) {
             // 定期切换队形
             //switchFormation();
@@ -679,14 +685,13 @@ namespace seven {
 
             // 记录轨迹
             double current_time = static_cast<double>(frame_count_) / params_.fps;
-            Formation_Type current_formation = params_.trans_formation;
+            
             for (int uav_id = 0; uav_id < params_.num_uavs; ++uav_id) {
                 trajectory_.addFrame(frame_count_, current_time, uav_id, current_formation, current_positions_[uav_id]);
             }
 
             if (isCompleted || frame_count_ == params_.max_frames - 1) {
                 end_trajectory.clear();
-                formation_param_.current_formation = current_formation;
                 for (int uav_id = 0; uav_id < params_.num_uavs; ++uav_id) {
                     TrajectoryFrame frame_;
                     frame_.frame = frame_count_;
@@ -700,6 +705,7 @@ namespace seven {
                 break;
             }
         }
+        return current_formation;
     }
 
     /**
@@ -758,156 +764,216 @@ namespace seven {
     }*/
 
     //Json::Value
-    void Transformation_Test(Json::Value input, Json::Value& trajectory_result)
+    //void Transformation_Test(Json::Value input, Json::Value& trajectory_result)
+    //{
+    //    // 1. 初始化参数
+    //    UAVFormationParams params;
+    //    /*params.num_uavs = 20;
+    //    params.interval = 5.0;
+    //    params.collision_radius = 2.5;
+    //    params.switch_interval = 8.0;
+    //    params.max_frames = 1500;*/
+    //    bool isInitial = false;      //是否是初始化
+
+    //    isInitial = input["is_initial"].asBool();
+    //    formation_param_.num_uavs = input["num_uavs"].asInt();
+    //    formation_param_.interval = input["interval"].asDouble();
+    //    formation_param_.collision_radius = input["collision_radius"].asDouble();
+    //    //formation_param_.switch_interval = input["switch_interval"].asDouble();
+    //    formation_param_.max_frames = input["max_frames"].asInt();
+    //    formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
+    //    formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
+
+    //    // 2. 创建编队变换实例
+    //    UAVFormationTransformer transformer;
+
+    //    if (isInitial)      //初始化编队位置
+    //    {
+    //        transformer.InitialFormation();
+
+    //        auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
+    //        initial_trajectory.clear();
+    //        end_trajectory.clear();
+    //        if (all_trajectory.empty()) return;
+    //        for (auto uav_data : all_trajectory)
+    //        {
+    //            initial_trajectory.push_back(uav_data);
+    //            end_trajectory.push_back(uav_data);
+    //            // 外层：帧IDhxk
+    //            std::string frame_key = "frame_" + std::to_string(uav_data.frame);
+    //            // 内层：节点ID
+    //            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
+    //            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
+    //            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+    //        }
+
+    //        return;
+    //    }
+    //    else                //队形变换
+    //    {
+    //        initial_trajectory = end_trajectory;
+    //        transformer.setCurrentPositions(end_trajectory);
+    //        transformer.switchFormation();
+    //    }
+
+    //    // 3. 运行编队变换计算
+    //    transformer.runTransformation();
+
+    //    // 4. 获取并打印轨迹数据
+    //    //const UAVTrajectory& trajectory = transformer.getTrajectory();
+    //    //trajectory.printSummary(params);
+
+    //    // 5. 示例：获取单个UAV的轨迹
+    //    //Json::Value intial_pos = trajectory_result["intial pos"];
+    //    for (auto uav_data : initial_trajectory)
+    //    {
+    //        // 外层：帧ID
+    //        std::string frame_key = "frame_0";
+    //        // 内层：节点ID
+    //        std::string node_key = "node_" + std::to_string(uav_data.uav_id);
+    //        trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
+    //        trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+    //    }
+
+    //    auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
+    //    if (all_trajectory.empty()) return;
+    //    for (auto uav_data : all_trajectory)
+    //    {
+    //        // 外层：帧ID
+    //        std::string frame_key = "frame_" + std::to_string(uav_data.frame + 1);
+    //        // 内层：节点ID
+    //        std::string node_key = "node_" + std::to_string(uav_data.uav_id);
+    //        trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
+    //        trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+    //    } 
+    //    /*initial_trajectory.clear();
+    //    initial_trajectory.push_back(all_trajectory.back());*/
+    //}
+
+    void Transformation_Use(UAVFormationParams& params, vector<TrajectoryFrame>& initial_trajectory,
+        vector<TrajectoryFrame>& end_trajectory, Json::Value input, Json::Value& trajectory_result)
     {
         // 1. 初始化参数
-        UAVFormationParams params;
-        /*params.num_uavs = 20;
-        params.interval = 5.0;
-        params.collision_radius = 2.5;
-        params.switch_interval = 8.0;
-        params.max_frames = 1500;*/
-        bool isInitial = false;      //是否是初始化
-
-        isInitial = input["is_initial"].asBool();
-        formation_param_.num_uavs = input["num_uavs"].asInt();
-        formation_param_.interval = input["interval"].asDouble();
-        formation_param_.collision_radius = input["collision_radius"].asDouble();
-        //formation_param_.switch_interval = input["switch_interval"].asDouble();
-        formation_param_.max_frames = input["max_frames"].asInt();
-        formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
-        formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
+        //UAVFormationParams params;
+        params.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
 
         // 2. 创建编队变换实例
         UAVFormationTransformer transformer;
-
-        if (isInitial)      //初始化编队位置
-        {
-            transformer.InitialFormation();
-
-            auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
-            initial_trajectory.clear();
-            end_trajectory.clear();
-            if (all_trajectory.empty()) return;
-            for (auto uav_data : all_trajectory)
-            {
-                initial_trajectory.push_back(uav_data);
-                end_trajectory.push_back(uav_data);
-                // 外层：帧IDhxk
-                std::string frame_key = "frame_" + std::to_string(uav_data.frame);
-                // 内层：节点ID
-                std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-                trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-                trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
-            }
-
-            return;
-        }
-        else                //队形变换
-        {
-            initial_trajectory = end_trajectory;
-            transformer.setCurrentPositions(end_trajectory);
-            transformer.switchFormation();
-        }
-
-        // 3. 运行编队变换计算
-        transformer.runTransformation();
-
-        // 4. 获取并打印轨迹数据
-        //const UAVTrajectory& trajectory = transformer.getTrajectory();
-        //trajectory.printSummary(params);
-
-        // 5. 示例：获取单个UAV的轨迹
-        //Json::Value intial_pos = trajectory_result["intial pos"];
-        for (auto uav_data : initial_trajectory)
-        {
-            // 外层：帧ID
-            std::string frame_key = "frame_0";
-            // 内层：节点ID
-            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
-        }
-
-        auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
-        if (all_trajectory.empty()) return;
-        for (auto uav_data : all_trajectory)
-        {
-            // 外层：帧ID
-            std::string frame_key = "frame_" + std::to_string(uav_data.frame + 1);
-            // 内层：节点ID
-            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
-        } 
-        /*initial_trajectory.clear();
-        initial_trajectory.push_back(all_trajectory.back());*/
-    }
-
-    void Transformation_Use(Json::Value input, Json::Value& trajectory_result)
-    {
-        // 1. 初始化参数
-        UAVFormationParams params;
-
-        formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
-
-        // 2. 创建编队变换实例
-        UAVFormationTransformer transformer;
+        transformer.InitialParams(params);
 
         initial_trajectory = end_trajectory;
         transformer.setCurrentPositions(end_trajectory);
         transformer.switchFormation();
 
         // 3. 运行编队变换计算
-        transformer.runTransformation();
+        params.current_formation = transformer.runTransformation(end_trajectory);
 
         // 4. 示例：获取单个UAV的轨迹
         //Json::Value intial_pos = trajectory_result["intial pos"];
-        for (auto uav_data : initial_trajectory)
-        {
-            // 外层：帧ID
-            std::string frame_key = "frame_0";
-            // 内层：节点ID
-            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
-        }
+        //for (auto uav_data : initial_trajectory)
+        //{
+        //    // 外层：帧ID
+        //    std::string frame_key = "frame_0";
+        //    // 内层：节点ID
+        //    std::string node_key = "node_" + std::to_string(uav_data.uav_id);
+        //    trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
+        //    trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+        //}
 
         auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
         if (all_trajectory.empty()) return;
+
+        trajectory_result["frames"] = Json::Value(Json::arrayValue);
+
+        // 3. 先按帧号分组：key=帧号，value=该帧下的所有节点数据
+        std::unordered_map<int, std::vector<TrajectoryFrame>> frame_group;
         for (auto uav_data : all_trajectory)
         {
-            // 外层：帧ID
-            std::string frame_key = "frame_" + std::to_string(uav_data.frame + 1);
-            // 内层：节点ID
-            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+            frame_group[uav_data.frame].push_back(uav_data);
+            initial_trajectory.push_back(uav_data);
+            end_trajectory.push_back(uav_data);
         }
-        /*initial_trajectory.clear();
-        initial_trajectory.push_back(all_trajectory.back());*/
+
+        // 4. 遍历分组，构建每个帧的层级
+        for (const auto& group : frame_group) {
+            int frame_id = group.first;                // 帧号
+            const auto& frame_nodes = group.second;    // 该帧下的所有节点
+
+            // 4.1 构建单个帧对象
+            Json::Value frame_obj;
+            frame_obj["frame_id"] = frame_id;
+
+            // 4.2 构建该帧下的nodes数组
+            Json::Value nodes(Json::arrayValue);
+            for (const auto& uav_data : frame_nodes) {
+                // 构建单个节点对象
+                Json::Value node_obj;
+                node_obj["node_id"] = uav_data.uav_id;
+                node_obj["pos_x"] = uav_data.position.x; // 节点挂载pos对象
+                node_obj["pos_y"] = uav_data.position.y;
+
+                nodes.append(node_obj); // 节点加入该帧的nodes数组
+            }
+
+            // 4.3 帧对象挂载nodes数组
+            frame_obj["nodes"] = nodes;
+
+            // 4.4 帧对象加入frames数组
+            trajectory_result["frames"].append(frame_obj);
+        }
     }
 
-    void Init_formation(Json::Value& trajectory_result)
+    void Init_formation(UAVFormationParams& formation_param_, vector<TrajectoryFrame>& initial_trajectory,
+    vector<TrajectoryFrame>& end_trajectory, Json::Value& trajectory_result)
     {
         //创建编队变换实例
         UAVFormationTransformer transformer;
-        transformer.InitialFormation();
+        transformer.InitialParams(formation_param_);
+        //初始化队形，并获取当前队形
+        formation_param_.current_formation = transformer.InitialFormation();
 
         auto all_trajectory = transformer.getTrajectory().getAllTrajectory();
         initial_trajectory.clear();
         end_trajectory.clear();
         if (all_trajectory.empty()) return;
+
+        trajectory_result["frames"] = Json::Value(Json::arrayValue);
+
+        // 3. 先按帧号分组：key=帧号，value=该帧下的所有节点数据
+        std::unordered_map<int, std::vector<TrajectoryFrame>> frame_group;
         for (auto uav_data : all_trajectory)
         {
+            frame_group[uav_data.frame].push_back(uav_data);
             initial_trajectory.push_back(uav_data);
             end_trajectory.push_back(uav_data);
-            // 外层：帧IDhxk
-            std::string frame_key = "frame_" + std::to_string(uav_data.frame);
-            // 内层：节点ID
-            std::string node_key = "node_" + std::to_string(uav_data.uav_id);
-            trajectory_result[frame_key][node_key]["pos_x"] = uav_data.position.x;
-            trajectory_result[frame_key][node_key]["pos_y"] = uav_data.position.y;
+        }
+
+        // 4. 遍历分组，构建每个帧的层级
+        for (const auto& group : frame_group) {
+            int frame_id = group.first;                // 帧号
+            const auto& frame_nodes = group.second;    // 该帧下的所有节点
+
+            // 4.1 构建单个帧对象
+            Json::Value frame_obj;
+            frame_obj["frame_id"] = frame_id;
+
+            // 4.2 构建该帧下的nodes数组
+            Json::Value nodes(Json::arrayValue);
+            for (const auto& uav_data : frame_nodes) {
+                // 构建单个节点对象
+                Json::Value node_obj;
+                node_obj["node_id"] = uav_data.uav_id;
+                node_obj["pos_x"] = uav_data.position.x; // 节点挂载pos对象
+                node_obj["pos_y"] = uav_data.position.y;
+
+                nodes.append(node_obj); // 节点加入该帧的nodes数组
+            }
+
+            // 4.3 帧对象挂载nodes数组
+            frame_obj["nodes"] = nodes;
+
+            // 4.4 帧对象加入frames数组
+            trajectory_result["frames"].append(frame_obj);
         }
     }
 }

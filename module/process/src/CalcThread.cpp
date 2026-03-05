@@ -177,6 +177,7 @@ namespace seven
 		task_param->hPipe = hPipe;
 		task_param->max_frames = CalcParamManager::Ins().GetCalcParam().sim_time_;
 		task_param->run_frames = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+		task_param->return_frames = CalcParamManager::Ins().GetCalcParam().return_frames;
 		task_param->serveral_plat = CalcParamManager::Ins().GetPlatform();
 		task_param->input = input;
 		task_param->task_finished = false;
@@ -338,6 +339,15 @@ namespace seven
 					}
 				}
 
+				//临时数据
+				CalcTempParam TempParam;
+				TempParam.input = task_param->input;
+				TempParam.max_frames.store(task_param->max_frames);
+				TempParam.run_frames.store(task_param->run_frames);
+				TempParam.return_frames.store(task_param->return_frames);
+				TempParam.serveral_plat = task_param->serveral_plat;
+
+
 				if (task_param) {
 					CalcParamManager::Ins().GetCalcParam();
 					// 执行核心计算
@@ -345,6 +355,7 @@ namespace seven
 					Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
 					if (type == Cmd_Type::Barrage)
 					{
+						SimConfig barrage_config = ContextManager::Ins().GetBarrageParams();
 						while (true) {
 							//判断是否运行到最大帧数
 							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
@@ -367,12 +378,14 @@ namespace seven
 								server_platform_data.push_back(task_param->serveral_plat[cnt]);
 							}*/
 							//std::vector<InputPlatParam> server_platform_data = barrage_config.platsparam;
-							Barrage_Test_1(task_param);
-							sendResultData(task_param->hPipe, task_param->trajectory_result);
+							Barrage_Test_1(TempParam, barrage_config);
+							CalcParamManager::Ins().SetRunFramesCnt(TempParam.run_frames);
+							sendResultData(task_param->hPipe, TempParam.trajectory_result);
 						}
 					}
 					else if (type == Cmd_Type::Deception)
 					{
+						SimParams deception_config = ContextManager::Ins().GetDeceptionParams();
 						while (true) {
 							//判断是否运行到最大帧数
 							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
@@ -395,13 +408,21 @@ namespace seven
 							{
 								server_platform_data.push_back(task_param->serveral_plat[cnt]);
 							}*/
-							Deception_Use(task_param);
-							sendResultData(task_param->hPipe, task_param->trajectory_result);
+							Deception_Use(TempParam, deception_config);
+							CalcParamManager::Ins().SetRunFramesCnt(TempParam.run_frames);
+							sendResultData(task_param->hPipe, TempParam.trajectory_result);
 						}
 					}
 					else if (type == Cmd_Type::Transformation)
 					{
-						Transformation_Test(task_param->input, task_param->trajectory_result);
+						UAVFormationParams params = ContextManager::Ins().GetFormationParams();
+						vector<TrajectoryFrame> initial_trajectory = ContextManager::Ins().GetInitialTrajectory();
+						vector<TrajectoryFrame> end_trajectory = ContextManager::Ins().GetEndTrajectory();
+						Transformation_Use(params, initial_trajectory, end_trajectory, task_param->input, task_param->trajectory_result);
+						ContextManager::Ins().SetFormationParams(params);
+						ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
+						ContextManager::Ins().SetEndTrajectory(end_trajectory);
+						//Transformation_Use(task_param->input, task_param->trajectory_result);
 						sendResultData(task_param->hPipe, task_param->trajectory_result);
 					}
 

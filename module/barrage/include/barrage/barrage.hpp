@@ -3,9 +3,6 @@
 
 #include "core/CommonCore.hpp"
 
-// 宏定义常量
-#define GNSS_FC 1575.42e6 // GNSS中心频率(GPS L1频段, Hz)
-
 namespace seven {
 
     // ========================= 1. 结构体封装参数 =========================
@@ -15,71 +12,12 @@ namespace seven {
         Weak
     };*/
 
-    // 干扰源参数结构体
-    struct JammerParam {
-        LLA pos;             // 干扰源经纬高(°/km)
-        double power;        // 发射功率(W)
-        std::string type;    // 干扰样式：continuous_wave/multi-tone/bandlimited_gaussian/pseudocode/pulse
-        double bandwidth;    // 干扰带宽(Hz)
-        double freq;         // 干扰频率(Hz)
-        double pulse_width;  // 脉冲宽度(s)（仅脉冲干扰）
-        double pulse_period; // 脉冲周期(s)（仅脉冲干扰）
-    };
-
-    // 卫星参数结构体
-    struct SatelliteParam {
-        std::vector<LLA> sat_pos;  // 卫星经纬高列表(°/km)
-        double carrier_power;      // 卫星信号载波功率(W)
-    };
-
     //struct InputPlatParam {
     //    UINT plat_id;       // 平台ID
     //    LLA plat_initial_pos;
     //    LLA cur_plat_pos;   // 平台经纬高(°/km)
     //    LLA cur_plat_vec;   // 平台经纬高速度(°/km)
     //};
-
-    // 核心仿真配置结构体
-    struct SimConfig {
-        // 基础参数
-        double Td = 0.02;          // 相关积分时间(s)
-        double c = 3e8;        // 光速(m/s)
-        double fc = GNSS_FC;       // GNSS中心频率(Hz)
-
-        // 导航装备参数
-        std::string combined_nav = "loose";  // 组合导航方式：loose/tight/deep
-        std::string anti_jam_filter = "frequency"; // 抗干扰滤波方式
-        std::string pseudocode = "C/A";      // 伪码类型：C/A/P(Y)/M
-        double Tc = 9.77e-7;       // 伪码码元宽度(s)
-        double fs = 10.23e6;      // M码副载频(Hz)
-        double d = 1.0 / 8;          // 码跟踪误差系数
-        double beta = 2e5;         // 接收机等效预相关带宽(Hz)2e6
-        double ins_drift = 0.01;   // 惯导漂移率(km/s)
-
-        // 跟踪环参数
-        double Bp = 18;            // PLL带宽(Hz)
-        double Bd = 18;            // DLL带宽(Hz)
-
-        // 失锁判定阈值
-        double pll_unlock_thresh = 15;  // 载波环失锁阈值(°)
-        double dll_unlock_thresh = 1.0 / 8 / 6; // 码环失锁阈值
-
-        // 标称载噪比
-        double C_N0_nom = 45;      // dB-Hz
-        double Bn = 2.046e6;       // 噪声带宽 (Hz)
-        double G_ant = 10;         // 抗干扰波束成形增益 (dB)
-
-        //UINT return_frames = 100;  // 返回结果数据帧数
-        //UINT run_frames_cnt = 0;   // 运行帧数总数
-
-        // 干扰源列表
-        std::vector<JammerParam> jammers = {};
-        // 多平台参数
-        std::vector<InputPlatParam> platsparam = {};
-
-        // 卫星参数
-        SatelliteParam satellite;
-    };
 
     // 输出结果结构体
     struct BarrageTrackResult {
@@ -153,10 +91,10 @@ namespace seven {
 
     int SEVEN_EXPORTS Barrage_Test(Json::Value input, Json::Value& trajectory_result);
     //int SEVEN_EXPORTS Barrage_Test_1(std::vector<InputPlatParam>& server_platform_data, Json::Value& trajectory_result);
-    int SEVEN_EXPORTS Barrage_Test_1(std::shared_ptr<CalcTaskParam>& task_param);
+    int SEVEN_EXPORTS Barrage_Test_1(CalcTempParam& task_param, SimConfig barrage_config);
     int SEVEN_EXPORTS Barrage_CalcjammerArea(const SimConfig& barrage_config, vector<JammerRangeResult>& jammer_range);
 
-    static SimConfig barrage_config;
+    //static SimConfig barrage_config;
 }
 
 #endif

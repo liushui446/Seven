@@ -8,17 +8,17 @@
 
 namespace seven {
 
-	//// 新增：线程计算任务的参数结构体
-	//struct CalcTaskParam {
-	//	HANDLE hPipe = nullptr;                  // 管道句柄
-	//	Json::Value input;                       // 输入JSON数据
-	//	Json::Value trajectory_result;           // 输出结果
-	//	std::atomic<int> max_frames;			 // 运行最大帧数
-	//	std::atomic<int> run_frames;			 // 每次运行帧数
-	//	std::atomic<int> return_frames;			 // 每次运行帧数
-	//	std::atomic<bool> task_finished{ false };  // 任务是否完成
-	//	vector<InputPlatParam> serveral_plat;
-	//};
+	// 新增：线程计算任务的参数结构体
+	struct CalcTaskParam {
+		HANDLE hPipe = nullptr;                  // 管道句柄
+		Json::Value input;                       // 输入JSON数据
+		Json::Value trajectory_result;           // 输出结果
+		std::atomic<int> max_frames;			 // 运行最大帧数
+		std::atomic<int> run_frames;			 // 每次运行帧数
+		std::atomic<int> return_frames;			 // 每次运行帧数
+		std::atomic<bool> task_finished{ false };  // 任务是否完成
+		vector<InputPlatParam> serveral_plat;
+	};
 
 	string formatDouble(double value, int precision);
 

@@ -58,9 +58,10 @@ typedef unsigned int        UINT;
 typedef unsigned char uchar;
 typedef unsigned short ushort;
 
-#define	MARK_SUM (40)		// Mark点数
-
+// 宏定义常量
 #define M_PI 3.141592653589793238462643383
+
+#define GNSS_FC 1575.42e6 // GNSS中心频率(GPS L1频段, Hz)
 
 namespace seven
 {
@@ -212,6 +213,54 @@ namespace seven
         LLA position_;
     };
 
+    /**
+     * @brief 二维坐标结构体
+     */
+    struct Point2D {
+        double x = 0.0;
+        double y = 0.0;
+
+        Point2D() = default;
+        Point2D(double x_, double y_) : x(x_), y(y_) {}
+
+        // 运算符重载：向量运算
+        Point2D operator+(const Point2D& other) const {
+            return { x + other.x, y + other.y };
+        }
+
+        Point2D operator-(const Point2D& other) const {
+            return { x - other.x, y - other.y };
+        }
+
+        Point2D operator*(double scalar) const {
+            return { x * scalar, y * scalar };
+        }
+
+        Point2D operator/(double scalar) const {
+            return { x / scalar, y / scalar };
+        }
+
+        Point2D& operator=(const Point2D& other) {
+            if (this == &other) {  // 处理自赋值
+                return *this;
+            }
+            x = other.x;
+            y = other.y;
+            return *this;
+        }
+
+        // 向量长度
+        double norm() const {
+            return std::sqrt(x * x + y * y);
+        }
+
+        // 单位向量
+        Point2D normalized() const {
+            double n = norm();
+            return n < 1e-6 ? Point2D(0, 0) : Point2D(x / n, y / n);
+        }
+    };
+
     // 新增：干扰范围计算结果结构体
     struct JammerRangeResult {
         int jammer_id;               // 干扰源ID
@@ -266,6 +315,232 @@ namespace seven
             this->sim_time_ = other.sim_time_;
             return *this;
         }
+    };
+
+    struct CalcTempParam {
+        Json::Value input;                       // 输入JSON数据
+        Json::Value trajectory_result;           // 输出结果
+        std::atomic<int> max_frames;			 // 运行最大帧数
+        std::atomic<int> run_frames;			 // 每次运行帧数
+        std::atomic<int> return_frames;			 // 每次运行帧数
+        vector<InputPlatParam> serveral_plat;
+
+    };
+
+    /**
+     * @brief 单帧轨迹数据结构体
+     */
+    struct TrajectoryFrame {
+        int frame = 0;          // 帧数
+        double time = 0.0;      // 时间（秒）
+        int uav_id = 0;         // 节点ID
+        Formation_Type formation;  // 当前队形
+        Point2D position;       // 位置坐标
+
+        // 可选：添加默认构造/拷贝构造，确保赋值正常
+        TrajectoryFrame() = default;
+        TrajectoryFrame(const TrajectoryFrame&) = default;
+        TrajectoryFrame& operator=(const TrajectoryFrame&) = default;
+    };
+
+    /**
+    * @brief 初始化参数结构体
+    */
+    struct UAVFormationParams {
+        int num_uavs = 8;                // 节点数量
+        double interval = 5.0;           // 队形节点间间隔（米）
+        double collision_radius = 2.0;   // 避碰半径（米）
+        //double switch_interval = 5.0;    // 队形切换间隔（秒）
+        double transition_alpha_base = 0.5; // 基础α值（近距时使用）
+        double transition_alpha_max = 0.02;  // 最大α值（远距时使用）
+        double far_dist_ratio = 0.35;          // 远距阈值：初始距离的80%
+        double transition_alpha = 0.02;  // 位置过渡系数（越小越平滑）0.05
+        double max_adjust_step = 0.1;     // 单次最大调整0.1米
+        int max_collision_iter = 100;   // 最大避碰迭代次数
+        int fps = 30;                    // 帧率（用于时间换算）
+        int max_frames = 200;           // 最大运行帧数(1500)
+        UINT return_frames = 100;        // 返回结果数据帧数
+        bool isInitial = false;          // 是否进行编队初始化
+
+        // 队形序列（默认：矩形→三角形→圆形→菱形→直线）
+        //std::vector<std::string> formation_sequence = { "rectangle", "triangle", "circle", "diamond", "line" };
+        Formation_Type trans_formation;  // 需要变换的队形
+        Formation_Type current_formation;// 当前队形
+        Point2D pos_center;              // 队形中心点位置
+
+        UAVFormationParams& operator=(const UAVFormationParams& other) {
+
+            num_uavs = other.num_uavs;
+            interval = other.interval;
+            collision_radius = other.collision_radius;
+            transition_alpha = other.transition_alpha;
+            fps = other.fps;
+            max_frames = other.max_frames;
+            isInitial = other.isInitial;
+
+            trans_formation = other.trans_formation;
+            current_formation = other.current_formation;
+            pos_center = other.pos_center;
+
+            return *this;
+        }
+
+        // 可选：添加默认构造/拷贝构造
+        UAVFormationParams() = default;
+        UAVFormationParams(const UAVFormationParams&) = default;
+
+    };
+
+    // 卫星参数结构体
+    struct SatelliteParam {
+        std::vector<LLA> sat_pos;  // 卫星经纬高列表(°/km)
+        double carrier_power;      // 卫星信号载波功率(W)
+
+        SatelliteParam& operator=(const SatelliteParam& other) {
+            this->sat_pos = other.sat_pos;
+            this->carrier_power = other.carrier_power;
+            return *this;
+        }
+        // 可选：添加默认构造/拷贝构造（保证结构体使用完整性）
+        SatelliteParam() = default;
+        SatelliteParam(const SatelliteParam& other) = default;
+    };
+
+    // 干扰源参数结构体
+    struct JammerParam {
+        LLA pos;             // 干扰源经纬高(°/km)
+        double power;        // 发射功率(W)
+        std::string type;    // 干扰样式：continuous_wave/multi-tone/bandlimited_gaussian/pseudocode/pulse
+        double bandwidth;    // 干扰带宽(Hz)
+        double freq;         // 干扰频率(Hz)
+        double pulse_width;  // 脉冲宽度(s)（仅脉冲干扰）
+        double pulse_period; // 脉冲周期(s)（仅脉冲干扰）
+
+        // 赋值运算符重载
+        JammerParam& operator=(const JammerParam& other) {
+            // 1. 自赋值检查（避免不必要的拷贝，防止自我赋值导致的错误）
+            if (this == &other) {
+                return *this;
+            }
+
+            // 2. 逐字段拷贝（覆盖所有成员变量）
+            pos = other.pos;               // 嵌套结构体赋值（依赖LLA的operator=）
+            power = other.power;           // 发射功率
+            type = other.type;             // 干扰样式（std::string自带深拷贝）
+            bandwidth = other.bandwidth;   // 干扰带宽
+            freq = other.freq;             // 干扰频率
+            pulse_width = other.pulse_width; // 脉冲宽度
+            pulse_period = other.pulse_period; // 脉冲周期
+
+            // 3. 返回自身引用（支持链式赋值，如a = b = c）
+            return *this;
+        }
+
+        // 可选：添加默认构造/拷贝构造（保证结构体使用完整性）
+        JammerParam() = default;
+        JammerParam(const JammerParam& other) = default;
+    };
+
+    // 核心仿真配置结构体
+    struct SimConfig {
+        // 基础参数
+        double Td = 0.02;          // 相关积分时间(s)
+        double c = 3e8;        // 光速(m/s)
+        double fc = GNSS_FC;       // GNSS中心频率(Hz)
+
+        // 导航装备参数
+        std::string combined_nav = "loose";  // 组合导航方式：loose/tight/deep
+        std::string anti_jam_filter = "frequency"; // 抗干扰滤波方式
+        std::string pseudocode = "C/A";      // 伪码类型：C/A/P(Y)/M
+        double Tc = 9.77e-7;       // 伪码码元宽度(s)
+        double fs = 10.23e6;      // M码副载频(Hz)
+        double d = 1.0 / 8;          // 码跟踪误差系数
+        double beta = 2e5;         // 接收机等效预相关带宽(Hz)2e6
+        double ins_drift = 0.01;   // 惯导漂移率(km/s)
+
+        // 跟踪环参数
+        double Bp = 18;            // PLL带宽(Hz)
+        double Bd = 18;            // DLL带宽(Hz)
+
+        // 失锁判定阈值
+        double pll_unlock_thresh = 15;  // 载波环失锁阈值(°)
+        double dll_unlock_thresh = 1.0 / 8 / 6; // 码环失锁阈值
+
+        // 标称载噪比
+        double C_N0_nom = 45;      // dB-Hz
+        double Bn = 2.046e6;       // 噪声带宽 (Hz)
+        double G_ant = 10;         // 抗干扰波束成形增益 (dB)
+
+        //UINT return_frames = 100;  // 返回结果数据帧数
+        //UINT run_frames_cnt = 0;   // 运行帧数总数
+
+        // 干扰源列表
+        std::vector<JammerParam> jammers = {};
+        // 多平台参数
+        std::vector<InputPlatParam> platsparam = {};
+
+        // 卫星参数
+        SatelliteParam satellite;
+
+        SimConfig& operator=(const SimConfig& other) {
+
+            this->beta = other.beta;
+            this->jammers = other.jammers;          // vector自动深拷贝
+            this->satellite = other.satellite;
+            this->platsparam = other.platsparam;
+            return *this;
+        }
+
+        // 可选：添加默认构造/拷贝构造
+        SimConfig() = default;
+        SimConfig(const SimConfig&) = default;
+    };
+
+    // 仿真参数结构体
+    struct SimParams {
+        // 基础阈值
+        double GDOP_threshold = 3.0;
+        double power_ratio_threshold = 5.0;  // 功率比阈值(dB)
+
+        // 干扰装备参数
+        int jammer_num = 4;
+        std::vector<LLA> jammer_pos = {
+            {115.2, 29.0, 1.0},
+            {115.3, 29.1, 1.0},
+            {115.1, 29.2, 1.0},
+            {115.4, 29.0, 1.0}
+        };
+
+        // 欺骗点位置
+        LLA deception_pos = { 115.32, 29.15, 0.5 };
+
+        // 卫星参数(默认10颗)
+        std::vector<LLA> satellite_pos = {
+            {120.0, 30.0, 20000},
+            {110.0, 35.0, 20000},
+            {130.0, 25.0, 20000},
+            {105.0, 28.0, 20000},
+            {140.0, 32.0, 20000},
+            {100.0, 22.0, 20000},
+            {125.0, 40.0, 20000},
+            {115.0, 20.0, 20000},
+            {135.0, 27.0, 20000},
+            {95.0, 33.0, 20000}
+        };
+
+        // 多平台参数
+        std::vector<InputPlatParam> platsparam = {};
+
+        SimParams& operator=(const SimParams& other) {
+
+            this->deception_pos = other.deception_pos;
+            this->platsparam = other.platsparam;
+            return *this;
+        }
+
+        // 可选：添加默认构造/拷贝构造
+        SimParams() = default;
+        SimParams(const SimParams&) = default;
     };
 
 }
