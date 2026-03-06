@@ -279,12 +279,14 @@ namespace seven
         LLA plat_initial_pos;
         LLA cur_plat_pos;   // 平台经纬高(°/km)
         LLA cur_plat_vec;   // 平台经纬高速度(°/km)
+        LLA deception_pos;
 
         InputPlatParam()
             : plat_id(0)
             , plat_initial_pos()
             , cur_plat_pos()
             , cur_plat_vec()
+            , deception_pos()
         {
         }
 
@@ -293,6 +295,7 @@ namespace seven
             this->plat_initial_pos = other.plat_initial_pos;
             this->cur_plat_pos = other.cur_plat_pos;
             this->cur_plat_vec = other.cur_plat_vec;
+            this->deception_pos = other.deception_pos;
             return *this;
         }
     };

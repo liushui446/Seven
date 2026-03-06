@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <process/CalcThread.hpp>
 #include "process/CalcParamRes.hpp"
+#include <random>
 
 using namespace Json;
 
@@ -35,14 +36,6 @@ namespace seven {
             // 初始化配置
             Json::Value intial_data;
             Cmd_Type type = static_cast<Cmd_Type>(input.get("cmd", 4).asInt());
-            /*if (type == Cmd_Type::Transformation)
-            {
-                intial_data = result["node_list"];
-            }
-            else
-            {
-                intial_data = result["jammer_list"];
-            }*/
             init_sim_config(input, intial_data);
 
             if (type == Cmd_Type::Transformation)
@@ -152,19 +145,6 @@ namespace seven {
             }
             if (ret) {}
 
-            //Cmd_Type type = static_cast<Cmd_Type>(cmd_int);
-            //if (type == Cmd_Type::Barrage)
-            //{
-            //    //Barrage_Test_1(input, result);
-            //}
-            //else if (type == Cmd_Type::Deception)
-            //{
-            //    //Deception_Use(input, result);
-            //}
-            //else if (type == Cmd_Type::Transformation)
-            //{
-            //    //Transformation_Test(input, result);
-            //}
         }
         catch (const std::exception& e) {
 
@@ -345,31 +325,113 @@ namespace seven {
             ContextManager::Ins().SetBarrageParams(barrage_config);
             std::cout << "platsparam size:" << to_string(barrage_config.platsparam.size()) << std::endl;
         }
+        //else if (type == Cmd_Type::Deception)
+        //{
+        //    // 解析输入参数
+        //    Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+        //    //int jammer_num = input.get("jammer_num", 1).asInt();
+        //    UINT return_frames = input.get("return_frames", 100).asInt();
+        //    CalcParamManager::Ins().SetReturnFramesCount(return_frames);
+
+        //    SimParams deception_config;
+        //    
+        //    
+        //    // 2.干扰源添加
+        //    for (int cnt = 0; cnt < deception_config.jammer_num; cnt++)
+        //    {
+        //        //干扰范围
+        //        //Json::Value& jammer_area_json = trajectory_result["jammer area"];
+        //        Json::Value jammer_mes;
+        //        jammer_mes["jammer id"] = cnt + 1;
+        //        jammer_mes["jammer pos centra"]["lon_deg"] = deception_config.jammer_pos[cnt].lon_deg;
+        //        jammer_mes["jammer pos centra"]["lat_deg"] = deception_config.jammer_pos[cnt].lat_deg;
+        //        jammer_mes["jammer pos centra"]["h_m"] = deception_config.jammer_pos[cnt].h_m * 1000;
+        //        jammer_mes["jammer r"] = 0; //m
+        //        result.append(jammer_mes);
+        //    }
+
+        //    // 3.解析多平台目标数据
+        //    // 解析多平台航迹数据
+        //    const Json::Value& platform_tracks = input["platform_tracks"];
+        //    for (int i = 0; i < platform_tracks.size(); i++) {
+        //        const Json::Value& plat_json = platform_tracks[i];
+        //        InputPlatParam plat_data;
+
+        //        // ===== 解析平台ID（必选字段）=====
+        //        if (!plat_json.isMember("platform_id") || !plat_json["platform_id"].isUInt()) {
+        //            std::cerr << "警告：第" << i << "个平台缺少有效platform_id，跳过该平台！" << std::endl;
+        //            continue;
+        //        }
+        //        plat_data.plat_id = plat_json["platform_id"].asUInt();
+
+        //        // ===== 解析初始位置inital_pos（必选字段，数组）=====
+        //        const Json::Value& inital_pos_arr = plat_json["inital_pos"];
+        //        if (!inital_pos_arr.isArray() || inital_pos_arr.empty()) {
+        //            std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效inital_pos数组，跳过！" << std::endl;
+        //            continue;
+        //        }
+        //        const Json::Value& inital_pos_json = inital_pos_arr[0];  // 取第一个位置点
+        //        LLA initial_pos;
+        //        // 字段默认值+存在性检查，避免缺失字段导致解析错误
+        //        initial_pos.lon_deg = inital_pos_json.isMember("lon_deg") ? inital_pos_json["lon_deg"].asDouble() : 0.0;
+        //        initial_pos.lat_deg = inital_pos_json.isMember("lat_deg") ? inital_pos_json["lat_deg"].asDouble() : 0.0;
+        //        initial_pos.h_m = inital_pos_json.isMember("h_m") ? inital_pos_json["h_m"].asDouble() / 1000 : 0.0;  // 米转千米
+
+        //        // ===== 解析速度velocity（必选字段，数组）=====
+        //        const Json::Value& velocity_arr = plat_json["velocity"];
+        //        if (!velocity_arr.isArray() || velocity_arr.empty()) {
+        //            std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效velocity数组，跳过！" << std::endl;
+        //            continue;
+        //        }
+        //        const Json::Value& velocity_json = velocity_arr[0];  // 取第一个速度点
+        //        LLA plat_vec;
+        //        plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
+        //        plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
+        //        plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
+
+        //        // ===== 赋值到平台参数 =====
+        //        plat_data.plat_initial_pos = initial_pos;
+        //        plat_data.cur_plat_pos = initial_pos;  // 初始位置=当前位置
+        //        plat_data.cur_plat_vec = plat_vec;     // 速度=JSON中的velocity
+
+        //        deception_config.platsparam.push_back(plat_data);
+        //    }
+
+        //    // 1.设置beta参数
+        //    if (jammer_strength == Jammer_Level::High) {
+
+        //    }
+        //    else if (jammer_strength == Jammer_Level::Middle) {
+
+        //    }
+        //    else if (jammer_strength == Jammer_Level::Low) {
+
+        //    }
+        //    ContextManager::Ins().SetDeceptionParams(deception_config);
+        //    std::cout << "platsparam size:" << to_string(deception_config.platsparam.size()) << std::endl;
+        //}
         else if (type == Cmd_Type::Deception)
         {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
-            //int jammer_num = input.get("jammer_num", 1).asInt();
             UINT return_frames = input.get("return_frames", 100).asInt();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
             SimParams deception_config;
-            // 1.设置beta参数
+            // 1.根据干扰强度设置参数（可在这里改偏移大小逻辑）
             if (jammer_strength == Jammer_Level::High) {
-                
+                // 高干扰：可以把偏移范围改大，例如 ±0.003°
             }
             else if (jammer_strength == Jammer_Level::Middle) {
-                
+                // 默认
             }
             else if (jammer_strength == Jammer_Level::Low) {
-                
+                // 低干扰：改小 ±0.0005°
             }
-            
+
             // 2.干扰源添加
             for (int cnt = 0; cnt < deception_config.jammer_num; cnt++)
             {
-                //干扰范围
-                //Json::Value& jammer_area_json = trajectory_result["jammer area"];
                 Json::Value jammer_mes;
                 jammer_mes["jammer id"] = cnt + 1;
                 jammer_mes["jammer pos centra"]["lon_deg"] = deception_config.jammer_pos[cnt].lon_deg;
@@ -380,53 +442,116 @@ namespace seven {
             }
 
             // 3.解析多平台目标数据
-            // 解析多平台航迹数据
             const Json::Value& platform_tracks = input["platform_tracks"];
+
+            // ==============================
+            // 新增：自定义欺骗航迹参数（可根据需求修改）
+            // ==============================
+            // 1. 偏离角度：单位°，范围0~180，正值为顺时针偏离，负值为逆时针偏离（相对于原航迹方向）
+            const double deviation_angle_deg = 30.0;  // 示例：偏离原航迹30°，可自行修改
+            // 2. 航迹步数：step，每步对应原速度的一个时间单位，步数越多，欺骗点离初始位置越远
+            const int step = 5;                       // 示例：5步，可自行修改
+            // 3. 角度转弧度（用于三角函数计算）
+            const double deviation_angle_rad = deviation_angle_deg * M_PI / 180.0;
+
             for (int i = 0; i < platform_tracks.size(); i++) {
                 const Json::Value& plat_json = platform_tracks[i];
                 InputPlatParam plat_data;
 
-                // ===== 解析平台ID（必选字段）=====
+                // ===== 解析平台ID =====
                 if (!plat_json.isMember("platform_id") || !plat_json["platform_id"].isUInt()) {
                     std::cerr << "警告：第" << i << "个平台缺少有效platform_id，跳过该平台！" << std::endl;
                     continue;
                 }
                 plat_data.plat_id = plat_json["platform_id"].asUInt();
 
-                // ===== 解析初始位置inital_pos（必选字段，数组）=====
+                // ===== 解析初始位置 inital_pos =====
                 const Json::Value& inital_pos_arr = plat_json["inital_pos"];
                 if (!inital_pos_arr.isArray() || inital_pos_arr.empty()) {
                     std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效inital_pos数组，跳过！" << std::endl;
                     continue;
                 }
-                const Json::Value& inital_pos_json = inital_pos_arr[0];  // 取第一个位置点
+                const Json::Value& inital_pos_json = inital_pos_arr[0];
                 LLA initial_pos;
-                // 字段默认值+存在性检查，避免缺失字段导致解析错误
                 initial_pos.lon_deg = inital_pos_json.isMember("lon_deg") ? inital_pos_json["lon_deg"].asDouble() : 0.0;
                 initial_pos.lat_deg = inital_pos_json.isMember("lat_deg") ? inital_pos_json["lat_deg"].asDouble() : 0.0;
-                initial_pos.h_m = inital_pos_json.isMember("h_m") ? inital_pos_json["h_m"].asDouble() / 1000 : 0.0;  // 米转千米
+                initial_pos.h_m = inital_pos_json.isMember("h_m") ? inital_pos_json["h_m"].asDouble() / 1000 : 0.0;
 
-                // ===== 解析速度velocity（必选字段，数组）=====
+                // ===== 解析速度 velocity =====
                 const Json::Value& velocity_arr = plat_json["velocity"];
                 if (!velocity_arr.isArray() || velocity_arr.empty()) {
                     std::cerr << "警告：平台" << plat_data.plat_id << "缺少有效velocity数组，跳过！" << std::endl;
                     continue;
                 }
-                const Json::Value& velocity_json = velocity_arr[0];  // 取第一个速度点
+                const Json::Value& velocity_json = velocity_arr[0];
                 LLA plat_vec;
                 plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
                 plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
                 plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
 
-                // ===== 赋值到平台参数 =====
+                // ===== 赋值平台参数 =====
                 plat_data.plat_initial_pos = initial_pos;
-                plat_data.cur_plat_pos = initial_pos;  // 初始位置=当前位置
-                plat_data.cur_plat_vec = plat_vec;     // 速度=JSON中的velocity
+                plat_data.cur_plat_pos = initial_pos;
+                plat_data.cur_plat_vec = plat_vec;
+
+                // ==============================
+                // 核心修改：按偏离角度+航迹步数，计算欺骗点位置
+                // 逻辑：1.计算原速度的大小和方向 2.按偏离角度计算欺骗速度 3.按步数计算总偏移量 4.推导欺骗点位置
+                // ==============================
+                LLA deception_pos;
+                // 高度完全继承初始高度，不做任何修改（与原逻辑一致）
+                deception_pos.h_m = initial_pos.h_m;
+
+                // 1. 计算原航迹速度的大小（模长），避免除以0
+                double original_vec_norm = std::sqrt(plat_vec.lon_deg * plat_vec.lon_deg + plat_vec.lat_deg * plat_vec.lat_deg);
+                if (original_vec_norm < 1e-6) {
+                    // 异常处理：原速度为0，无法计算偏离方向，退化为小幅随机偏移（避免欺骗点与初始位置重合）
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::uniform_real_distribution<double> small_offset(-0.0001, 0.0001);
+                    deception_pos.lon_deg = initial_pos.lon_deg + small_offset(gen);
+                    deception_pos.lat_deg = initial_pos.lat_deg + small_offset(gen);
+                    std::cerr << "警告：平台" << plat_data.plat_id << "原速度为0，欺骗点退化为小幅随机偏移！" << std::endl;
+                }
+                else {
+                    // 2. 计算原速度的方向单位向量（归一化）
+                    double original_lon_dir = plat_vec.lon_deg / original_vec_norm;  // 经度方向单位向量
+                    double original_lat_dir = plat_vec.lat_deg / original_vec_norm;  // 纬度方向单位向量
+
+                    // 3. 按偏离角度，计算欺骗速度的方向（旋转原速度方向）
+                    // 旋转公式：x' = x*cosθ - y*sinθ，y' = x*sinθ + y*cosθ（θ为偏离角度，弧度）
+                    double deception_lon_dir = original_lon_dir * cos(deviation_angle_rad) - original_lat_dir * sin(deviation_angle_rad);
+                    double deception_lat_dir = original_lon_dir * sin(deviation_angle_rad) + original_lat_dir * cos(deviation_angle_rad);
+
+                    // 4. 计算欺骗速度（大小与原速度一致，方向为偏离后的方向）
+                    double deception_vec_lon = deception_lon_dir * original_vec_norm;
+                    double deception_vec_lat = deception_lat_dir * original_vec_norm;
+
+                    // 5. 按航迹步数step，计算总偏移量（总偏移 = 欺骗速度 * 步数）
+                    double total_lon_offset = deception_vec_lon * step;
+                    double total_lat_offset = deception_vec_lat * step;
+
+                    // 6. 计算最终欺骗点位置（初始位置 + 总偏移量）
+                    deception_pos.lon_deg = initial_pos.lon_deg + total_lon_offset;
+                    deception_pos.lat_deg = initial_pos.lat_deg + total_lat_offset;
+                }
+
+                // 存入欺骗点（确保 InputPlatParam 里有 deception_pos 字段，与原逻辑一致）
+                plat_data.deception_pos = deception_pos;
 
                 deception_config.platsparam.push_back(plat_data);
+
+                // 调试打印（优化打印信息，新增偏离角度、步数、欺骗速度相关信息）
+                std::cout << "平台 " << plat_data.plat_id << " 欺骗点初始化（按偏离角度+航迹步数）：" << std::endl;
+                std::cout << "  初始经纬度：" << initial_pos.lon_deg << ", " << initial_pos.lat_deg << std::endl;
+                std::cout << "  原速度（lon/lat）：" << plat_vec.lon_deg << ", " << plat_vec.lat_deg << std::endl;
+                std::cout << "  自定义参数：偏离角度" << deviation_angle_deg << "°，航迹步数" << step << std::endl;
+                std::cout << "  欺骗经纬度：" << deception_pos.lon_deg << ", " << deception_pos.lat_deg << std::endl;
+                std::cout << "  高度不变：" << deception_pos.h_m << " km" << std::endl;
             }
+
             ContextManager::Ins().SetDeceptionParams(deception_config);
-            std::cout << "platsparam size:" << to_string(deception_config.platsparam.size()) << std::endl;
+            std::cout << "platsparam size: " << deception_config.platsparam.size() << std::endl;
         }
         else if (type == Cmd_Type::Transformation)
         {
@@ -441,14 +566,14 @@ namespace seven {
             formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
             //formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
 
-            std::cout << "===== 解析JSON取值验证 =====" << std::endl;
+            /*std::cout << "===== 解析JSON取值验证 =====" << std::endl;
             std::cout << "input[\"num_uavs\"] = " << input["num_uavs"].asInt() << std::endl;
             std::cout << "input[\"interval\"] = " << input["interval"].asDouble() << std::endl;
             std::cout << "input[\"formation\"] = " << input["formation"].asInt() << std::endl;
             std::cout << "===== 赋值后formation_param_数值 =====" << std::endl;
             std::cout << "num_uavs = " << formation_param_.num_uavs << std::endl;
             std::cout << "interval = " << formation_param_.interval << std::endl;
-            std::cout << "formation = " << static_cast<int>(formation_param_.trans_formation) << std::endl;
+            std::cout << "formation = " << static_cast<int>(formation_param_.trans_formation) << std::endl;*/
 
             Init_formation(formation_param_, initial_trajectory, end_trajectory, result);
             ContextManager::Ins().SetFormationParams(formation_param_);
