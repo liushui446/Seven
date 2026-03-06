@@ -473,30 +473,8 @@ namespace seven {
 
         // 1. 创建计算实例
         GNSSDeceptionError gnss_error;
-        gnss_error.set_params(deception_config);
 
-        // 2. (可选)自定义参数
-
-        //deception_config.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
-        //gnss_error.set_params(deception_config);
-
-        //if (jammer_strength == Jammer_Level::High)
-        //{
-        //    deception_config.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
-        //    gnss_error.set_params(deception_config);
-        //}
-        //else if (jammer_strength == Jammer_Level::Middle)
-        //{
-        //    deception_config.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
-        //    gnss_error.set_params(deception_config);
-        //}
-        //else if (jammer_strength == Jammer_Level::Low)
-        //{
-        //    deception_config.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
-        //    gnss_error.set_params(deception_config);
-        //}
-
-        // 解析多平台航迹数据
+        // 2. 解析多平台航迹数据
         for (int i = 0; i < task_param.serveral_plat.size(); i++) {
             UINT platform_id = task_param.serveral_plat[i].plat_id;
             
@@ -515,6 +493,9 @@ namespace seven {
                     task_param.serveral_plat[i].cur_plat_pos = target_pos + task_param.serveral_plat[i].cur_plat_vec;
                 }
             }
+            // 3. 欺骗点设置参数设置
+            deception_config.deception_pos = task_param.serveral_plat[i].deception_pos;
+            gnss_error.set_params(deception_config);
 
             // 4. 批量计算
             std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);

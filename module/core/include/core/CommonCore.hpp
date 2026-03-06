@@ -308,7 +308,7 @@ namespace seven
         CalcParam()
             : run_frames_cnt(0)
             , return_frames(100)
-            , sim_time_(800)
+            , sim_time_(2000)
         {
         }
 
