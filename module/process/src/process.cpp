@@ -157,6 +157,8 @@ namespace seven {
             return false;
         }
 
+        std::cerr << "仿真结果数据发送中..." << std::endl;
+
         DWORD bytesWritten = 0;
         // 核心写管道逻辑
         BOOL ret = WriteFile(
@@ -166,6 +168,8 @@ namespace seven {
             &bytesWritten,
             NULL
         );
+
+        std::cerr << "当前仿真结果数据发送完成！" << std::endl;
 
         // 错误处理和日志
         if (!ret) {

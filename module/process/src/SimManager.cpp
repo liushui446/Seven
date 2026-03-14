@@ -46,7 +46,7 @@ namespace seven {
             }
             else
             {
-                result["jammer_list"] == intial_data;
+                result["jammer_list"] = intial_data;
             }
 
             if (calc_thread_ptr == nullptr)
@@ -118,6 +118,8 @@ namespace seven {
             result["status"] = "success";
             // 更新仿真状态
             sim_state_ == SimState::RUNNING;
+
+            std::cerr << "仿真开始..." << std::endl;
 
             // 3. 提交任务（内部会自动唤醒线程）
             Json::Value output;
@@ -198,7 +200,7 @@ namespace seven {
         //重置运行帧数
         CalcParamManager::Ins().SetRunFramesCnt(0);
 
-        calc_thread_ptr->UnInit();
+        //calc_thread_ptr->UnInit();
 
         // 更新仿真状态
         sim_state_ = SimState::ENDDING;

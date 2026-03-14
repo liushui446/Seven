@@ -383,6 +383,7 @@ namespace seven {
         result.J_S_dB = 0.0;
         result.sigma_jpll = 0.0;
         result.sigma_jdll = 0.0;
+        result.jam_valid_flag = false;
         result.unlock_flag = false;
         result.pos_error = { 0.0, 0.0, 0.0 };
         result.pos_error_m = { 0.0, 0.0, 0.0 };
@@ -414,7 +415,7 @@ namespace seven {
 
             if (C_NJ < 80)// 干扰有效（载噪比低于正常阈值） 原来是30
             {
-
+                result.jam_valid_flag = true;
                 // 4. 计算跟踪环误差
                 double sigma_jpll, sigma_jdll;
                 calc_tracking_errors(C_NJ, J_S, barrage_config, i, sigma_jpll, sigma_jdll);
@@ -871,6 +872,8 @@ namespace seven {
                 track_point["carrier_loop_error_deg"] = results[i].sigma_jpll;
                 // 码环误差（保留原变量名，无单位则不标注）
                 track_point["code_loop_error"] = results[i].sigma_jdll;
+                // 干扰有效标志
+                track_point["barrage_valid"] = results[i].jam_valid_flag;
                 // 失锁标志
                 track_point["unlock_flag_bool"] = results[i].unlock_flag;  // 布尔值
 

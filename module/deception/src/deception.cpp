@@ -473,8 +473,10 @@ namespace seven {
 
         // 1. 创建计算实例
         GNSSDeceptionError gnss_error;
+        // 2. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
+        task_param.trajectory_result.clear(); // 可选，复用对象时建议保留
 
-        // 2. 解析多平台航迹数据
+        // 3. 解析多平台航迹数据
         for (int i = 0; i < task_param.serveral_plat.size(); i++) {
             UINT platform_id = task_param.serveral_plat[i].plat_id;
             
@@ -493,17 +495,14 @@ namespace seven {
                     task_param.serveral_plat[i].cur_plat_pos = target_pos + task_param.serveral_plat[i].cur_plat_vec;
                 }
             }
-            // 3. 欺骗点设置参数设置
+            // 4. 欺骗点设置参数设置
             deception_config.deception_pos = task_param.serveral_plat[i].deception_pos;
             gnss_error.set_params(deception_config);
 
-            // 4. 批量计算
+            // 5. 批量计算
             std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
-            // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
-            task_param.trajectory_result.clear(); // 可选，复用对象时建议保留
-
-            // 构造该平台的结果
+            // 6. 构造该平台的结果
             Json::Value platform_result;
             platform_result["platform_id"] = platform_id;
 
@@ -539,7 +538,7 @@ namespace seven {
             task_param.trajectory_result.append(platform_result);
         }
         //运行帧数计算
-        task_param.run_frames = task_param.run_frames + task_param.run_frames;
+        task_param.run_frames = task_param.run_frames + task_param.return_frames;
         return 0;
     }
 

@@ -163,7 +163,7 @@ namespace seven {
             }
             if (pos_idx >= params_.num_uavs)
             {
-                positions.clear();
+                //positions.clear();
                 return positions; // 无人机数量≤3时直接返回
             }
 

@@ -74,9 +74,9 @@ namespace seven
 
     enum class Sim_Type
     {
-        STOPPED = 1,   // 仿真暂停
-        STARTTED = 2,  // 仿真准备
-        RUNNING = 3,   // 仿真运行中
+        STARTTED = 1,  // 仿真准备
+        RUNNING = 2,   // 仿真运行中
+        STOPPED = 3,   // 仿真暂停
         ENDDING = 4    // 仿真结束
     };
 

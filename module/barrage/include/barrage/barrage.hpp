@@ -25,6 +25,7 @@ namespace seven {
         double J_S_dB;             // 干信比(dB)
         double sigma_jpll;         // 载波环振荡器颤动(°)
         double sigma_jdll;         // 码环跟踪误差
+        bool jam_valid_flag;       // 干扰有效
         bool unlock_flag;          // 失锁标志(true=失锁)
         LLA pos_error;             // 定位误差(°/m)
         LLA target_pos;            // 目标位置
