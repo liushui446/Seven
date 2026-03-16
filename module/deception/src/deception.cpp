@@ -487,7 +487,7 @@ namespace seven {
                 LLA target_pos;
                 target_pos.lon_deg = task_param.serveral_plat[i].cur_plat_pos.lon_deg + task_param.serveral_plat[i].cur_plat_vec.lon_deg * j;
                 target_pos.lat_deg = task_param.serveral_plat[i].cur_plat_pos.lat_deg + task_param.serveral_plat[i].cur_plat_vec.lat_deg * j;
-                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param.serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
+                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m + task_param.serveral_plat[i].cur_plat_vec.h_m * j;
                 track_points.push_back(target_pos);
 
                 if (j == task_param.return_frames - 1)
@@ -497,6 +497,7 @@ namespace seven {
             }
             // 4. 欺骗点设置参数设置
             deception_config.deception_pos = task_param.serveral_plat[i].deception_pos;
+            std::cout << "当前平台欺骗位置:{" << to_string(deception_config.deception_pos.lon_deg) << ", " << to_string(deception_config.deception_pos.lat_deg) << ", " << to_string(deception_config.deception_pos.h_m) << " }" << std::endl;
             gnss_error.set_params(deception_config);
 
             // 5. 批量计算

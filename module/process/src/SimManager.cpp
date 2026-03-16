@@ -214,15 +214,14 @@ namespace seven {
     // 初始化仿真配置
     void SimManager::init_sim_config(const Json::Value& input, Json::Value& result) {
 
-        
         //干扰源位置初始化
         Cmd_Type type = static_cast<Cmd_Type>(input.get("cmd", 4).asInt());
         if (type == Cmd_Type::Barrage)
         {
             SimConfig barrage_config;
             // 解析输入参数
-            Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
-            int jammer_num = input.get("jammer_num", 1).asInt();
+            Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
+            //int jammer_num = input.get("jammer_num", 1).asInt();
             UINT return_frames = input.get("return_frames", 100).asInt();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
@@ -238,19 +237,40 @@ namespace seven {
             }
 
             // 2.干扰源添加
+            // 新增干扰源
             barrage_config.jammers.clear();
-            for (int i = 0; i < jammer_num; i++)
+            // 从 result JSON 中读取 jammer_list
+            Json::Value jammer_list;
+            if (input.isMember("jammer_list"))
             {
-                // 添加干扰源（每个干扰源位置略有偏移）
-                JammerParam jammer;
-                // 干扰源位置：基础位置 + 偏移，确保每个干扰源位置不同
-                jammer.pos = { 120.0 + i * 0.2, 27.63 + i * 0.1, 8.3 };
-                // 配置干扰源
-                jammer.power = 10.0; // W
-                jammer.type = "continuous_wave";
-                jammer.bandwidth = 20e6;
-                jammer.freq = GNSS_FC;
-                barrage_config.jammers.push_back(jammer);
+                jammer_list = input["jammer_list"];
+                int jammer_num = jammer_list.size();
+                for (int i = 0; i < jammer_num; i++)
+                {
+                    JammerParam jammer;
+                    // 从JSON读取真实位置
+                    const Json::Value& jammer_json = jammer_list[i];
+                    double lon = jammer_json["jammer_pos"]["lon_deg"].asDouble();
+                    double lat = jammer_json["jammer_pos"]["lat_deg"].asDouble();
+                    double h_m = jammer_json["jammer_pos"]["h_m"].asDouble();
+
+                    // 干扰源位置：基础位置 + 偏移，确保每个干扰源位置不同
+                    //jammer.pos = { 120.0 + i * 0.2, 27.63 + i * 0.1, 8.3 };
+                    // 赋值位置：{经度, 纬度, 高度(km)}
+                    // 你的结构高度单位看起来是 km，JSON 是 m，所以 /1000
+                    jammer.pos = { lon, lat, h_m / 1000.0 };
+                    // 配置干扰源
+                    jammer.power = 10.0; // W
+                    jammer.type = "continuous_wave";
+                    jammer.bandwidth = 20e6;
+                    jammer.freq = GNSS_FC;
+                    barrage_config.jammers.push_back(jammer);
+                    std::cout << "接收到的干扰源位置:{" << to_string(lon) << ", " << to_string(lat) << ", " << to_string(h_m) << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "[警告] input 中不存在 jammer_list 或不是数组，使用默认0个干扰源" << std::endl;
             }
 
             // 3.配置卫星参数
@@ -282,7 +302,6 @@ namespace seven {
 
             // 5.解析多平台目标数据
             // 解析多平台航迹数据
-            
             const Json::Value& platform_tracks = input["platform_tracks"];
             for (int i = 0; i < platform_tracks.size(); i++) {
                 const Json::Value& plat_json = platform_tracks[i];
@@ -318,7 +337,7 @@ namespace seven {
                 LLA plat_vec;
                 plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
                 plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
-                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
+                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() / 1000 : 0.0;   //米转千米
 
                 // ===== 赋值到平台参数 =====
                 plat_data.plat_initial_pos = initial_pos;
@@ -333,7 +352,7 @@ namespace seven {
         else if (type == Cmd_Type::Deception)
         {
             // 解析输入参数
-            Jammer_Level jammer_strength = static_cast<Jammer_Level>(input["jammer_level"].asInt());
+            Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
             UINT return_frames = input.get("return_frames", 100).asInt();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
@@ -344,27 +363,43 @@ namespace seven {
             // 1.根据干扰强度设置参数（可在这里改偏移大小逻辑）
             if (jammer_strength == Jammer_Level::High) {
                 
-                deviation_angle_deg = -65;
+                deviation_angle_deg = 40;
             }
             else if (jammer_strength == Jammer_Level::Middle) {
                 // 默认
-                deviation_angle_deg = -45;
+                deviation_angle_deg = 30;
             }
             else if (jammer_strength == Jammer_Level::Low) {
                 // 低干扰：
-                deviation_angle_deg = -20;
+                deviation_angle_deg = 20;
             }
 
             // 2.干扰源添加
-            for (int cnt = 0; cnt < deception_config.jammer_num; cnt++)
+            // 从 result JSON 中读取 jammer_list
+            Json::Value jammer_list;
+            if (input.isMember("jammer_list"))
             {
-                Json::Value jammer_mes;
-                jammer_mes["jammer id"] = cnt + 1;
-                jammer_mes["jammer pos centra"]["lon_deg"] = deception_config.jammer_pos[cnt].lon_deg;
-                jammer_mes["jammer pos centra"]["lat_deg"] = deception_config.jammer_pos[cnt].lat_deg;
-                jammer_mes["jammer pos centra"]["h_m"] = deception_config.jammer_pos[cnt].h_m * 1000;
-                jammer_mes["jammer r"] = 0; //m
-                result.append(jammer_mes);
+                jammer_list = input["jammer_list"];
+                int jammer_num = jammer_list.size();
+                deception_config.jammer_pos.clear();
+                //deception_config.jammer_pos.resize(jammer_num);
+                for (int cnt = 0; cnt < jammer_num; cnt++)
+                {
+                    // 从JSON读取真实位置
+                    const Json::Value& jammer_json = jammer_list[cnt];
+                    double lon = jammer_json["jammer_pos"]["lon_deg"].asDouble();
+                    double lat = jammer_json["jammer_pos"]["lat_deg"].asDouble();
+                    double h_m = jammer_json["jammer_pos"]["h_m"].asDouble();
+
+                    std::cout << "接收到的干扰源位置:{" << to_string(lon) << ", " << to_string(lat) << ", " << to_string(h_m) << std::endl;
+
+                    LLA jammer_pos_ = { lon ,lat, h_m / 1000 };
+                    deception_config.jammer_pos.push_back(jammer_pos_);
+                }
+            }
+            else
+            {
+                std::cerr << "[警告] input 中不存在 jammer_list 或不是数组，使用默认0个干扰源" << std::endl;
             }
 
             // 3.解析多平台目标数据
@@ -374,7 +409,7 @@ namespace seven {
             // 新增：自定义欺骗航迹参数（可根据需求修改）
             // ==============================
             // 2. 航迹步数：step，每步对应原速度的一个时间单位，步数越多，欺骗点离初始位置越远
-            const int step = 800;                       // 示例：5步，可自行修改
+            const int step = 100;                       // 示例：5步，可自行修改
             // 3. 角度转弧度（用于三角函数计算）
             const double deviation_angle_rad = deviation_angle_deg * M_PI / 180.0;
 
@@ -411,7 +446,7 @@ namespace seven {
                 LLA plat_vec;
                 plat_vec.lon_deg = velocity_json.isMember("lon_deg") ? velocity_json["lon_deg"].asDouble() : 0.0;
                 plat_vec.lat_deg = velocity_json.isMember("lat_deg") ? velocity_json["lat_deg"].asDouble() : 0.0;
-                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() : 0.0;
+                plat_vec.h_m = velocity_json.isMember("h_m") ? velocity_json["h_m"].asDouble() / 1000 : 0.0;
 
                 // ===== 赋值平台参数 =====
                 plat_data.plat_initial_pos = initial_pos;
@@ -466,12 +501,12 @@ namespace seven {
                 deception_config.platsparam.push_back(plat_data);
 
                 // 调试打印（优化打印信息，新增偏离角度、步数、欺骗速度相关信息）
-                std::cout << "平台 " << plat_data.plat_id << " 欺骗点初始化（按偏离角度+航迹步数）：" << std::endl;
-                std::cout << "  初始经纬度：" << initial_pos.lon_deg << ", " << initial_pos.lat_deg << std::endl;
-                std::cout << "  原速度（lon/lat）：" << plat_vec.lon_deg << ", " << plat_vec.lat_deg << std::endl;
-                std::cout << "  自定义参数：偏离角度" << deviation_angle_deg << "°，航迹步数" << step << std::endl;
-                std::cout << "  欺骗经纬度：" << deception_pos.lon_deg << ", " << deception_pos.lat_deg << std::endl;
-                std::cout << "  高度不变：" << deception_pos.h_m << " km" << std::endl;
+                //std::cout << "平台 " << plat_data.plat_id << " 欺骗点初始化（按偏离角度+航迹步数）：" << std::endl;
+                //std::cout << "  初始经纬度：" << initial_pos.lon_deg << ", " << initial_pos.lat_deg << std::endl;
+                //std::cout << "  原速度（lon/lat）：" << plat_vec.lon_deg << ", " << plat_vec.lat_deg << std::endl;
+                //std::cout << "  自定义参数：偏离角度" << deviation_angle_deg << "°，航迹步数" << step << std::endl;
+                //std::cout << "  欺骗经纬度：" << deception_pos.lon_deg << ", " << deception_pos.lat_deg << std::endl;
+                //std::cout << "  高度不变：" << deception_pos.h_m << " km" << std::endl;
             }
 
             ContextManager::Ins().SetDeceptionParams(deception_config);

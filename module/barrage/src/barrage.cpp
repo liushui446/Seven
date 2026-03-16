@@ -413,7 +413,7 @@ namespace seven {
             double J_S = calc_jammer_to_signal_ratio(Pj, target_pos, barrage_config);
             sum_J_S += J_S;
 
-            if (C_NJ < 80)// 干扰有效（载噪比低于正常阈值） 原来是30
+            if (C_NJ < 70)// 干扰有效（载噪比低于正常阈值） 原来是30
             {
                 result.jam_valid_flag = true;
                 // 4. 计算跟踪环误差
@@ -468,7 +468,7 @@ namespace seven {
         LLA start_pos = {
             jammer_pos.lon_deg - 0.5,
             jammer_pos.lat_deg + 0.5,
-            jammer_pos.h_m
+            jammer_pos.h_m  //千米
         };
         track_points.push_back(start_pos);
 
@@ -608,7 +608,7 @@ namespace seven {
                 Json::Value point_json;
                 point_json["lon_deg"] = point.lon_deg;
                 point_json["lat_deg"] = point.lat_deg;
-                point_json["h_m"] = point.h_m * 1000; // 千米转米
+                point_json["h_m"] = point.h_m; //千米
                 track_points_json.append(point_json);
             }
 
@@ -831,7 +831,7 @@ namespace seven {
                 LLA target_pos;
                 target_pos.lon_deg = task_param.serveral_plat[i].cur_plat_pos.lon_deg + task_param.serveral_plat[i].cur_plat_vec.lon_deg * j;
                 target_pos.lat_deg = task_param.serveral_plat[i].cur_plat_pos.lat_deg + task_param.serveral_plat[i].cur_plat_vec.lat_deg * j;
-                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m / 1000.0 + task_param.serveral_plat[i].cur_plat_vec.h_m * j; // 米转千米
+                target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m + task_param.serveral_plat[i].cur_plat_vec.h_m * j;
                 track_points.push_back(target_pos);
 
                 //记录运行固定帧数后的位置

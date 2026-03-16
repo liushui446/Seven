@@ -507,12 +507,13 @@ namespace seven
 
         // 干扰装备参数
         int jammer_num = 4;
-        std::vector<LLA> jammer_pos = {
+        std::vector<LLA> jammer_pos = {};
+        /*std::vector<LLA> jammer_pos = {
             {115.2, 29.0, 1.0},
             {115.3, 29.1, 1.0},
             {115.1, 29.2, 1.0},
             {115.4, 29.0, 1.0}
-        };
+        };*/
 
         // 欺骗点位置
         LLA deception_pos = { 115.32, 29.15, 0.5 };
@@ -537,6 +538,7 @@ namespace seven
         SimParams& operator=(const SimParams& other) {
 
             this->deception_pos = other.deception_pos;
+            this->jammer_pos = other.jammer_pos;
             this->platsparam = other.platsparam;
             return *this;
         }
