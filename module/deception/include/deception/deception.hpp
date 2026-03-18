@@ -39,11 +39,14 @@ namespace seven {
         // 计算两点间ECEF距离(米)
         double calc_ecef_distance(const ECEF& p1, const ECEF& p2) const;
 
+        // 欺骗点速度插值
+        LLA interpolate_deception_points(const LLA& start_pos, const LLA& target_deception_pos, int t, const LLA& target_velocity);
+
         // 筛选GDOP最优的4颗卫星
         std::vector<LLA> select_optimal_satellites(const LLA& target_pos) const;
 
         // 计算信号相对功率
-        double calc_signal_power(const LLA& trans_pos, const LLA& recv_pos) const;
+        double calc_signal_power(const LLA& trans_pos, const LLA& recv_pos, double freq) const;
 
         // 判断欺骗信号是否有效
         bool is_deception_valid(const LLA& target_pos, const std::vector<LLA>& satellite_pos) const;

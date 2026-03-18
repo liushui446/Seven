@@ -101,6 +101,7 @@ namespace seven
         double lon_deg = 0.0;  // 经度(°)
         double lat_deg = 0.0;  // 纬度(°)
         double h_m = 0.0;     // 高度(km)
+        int    current_run_t = 0;         // 运行帧
 
         // 【加法运算符】LLA + LLA，对应分量逐元素相加
         friend LLA operator+(const LLA& lhs, const LLA& rhs) {
@@ -138,6 +139,7 @@ namespace seven
             this->lon_deg = other.lon_deg;
             this->lat_deg = other.lat_deg;
             this->h_m = other.h_m;
+            this->current_run_t = other.current_run_t;
             return *this;
         }
     };
@@ -504,7 +506,7 @@ namespace seven
         // 基础阈值
         double GDOP_threshold = 3.0;
         double power_ratio_threshold = 5.0;  // 功率比阈值(dB)
-
+        double jammer_freq = 1561.09e6;
         // 干扰装备参数
         int jammer_num = 4;
         std::vector<LLA> jammer_pos = {};
@@ -515,8 +517,13 @@ namespace seven
             {115.4, 29.0, 1.0}
         };*/
 
+        //平台初始位置、速度
+        LLA plat_initial_pos = { 0.0, 0.0, 0.0};
+        LLA cur_plat_vec = { 0.0, 0.0, 0.0};  // 平台经纬高速度(°/km)
+
         // 欺骗点位置
-        LLA deception_pos = { 115.32, 29.15, 0.5 };
+        LLA deception_pos = { 115.32, 29.15, 0.5, 0 };
+        LLA target_deception_pos = { 115.32, 29.15, 0.5, 0 };
 
         // 卫星参数(默认10颗)
         std::vector<LLA> satellite_pos = {
@@ -537,7 +544,11 @@ namespace seven
 
         SimParams& operator=(const SimParams& other) {
 
+            this->jammer_freq = other.jammer_freq;
+            this->plat_initial_pos = other.plat_initial_pos;
+            this->cur_plat_vec = other.cur_plat_vec;
             this->deception_pos = other.deception_pos;
+            this->target_deception_pos = other.target_deception_pos;
             this->jammer_pos = other.jammer_pos;
             this->platsparam = other.platsparam;
             return *this;

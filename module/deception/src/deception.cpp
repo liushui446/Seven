@@ -78,6 +78,48 @@ namespace seven {
         return sqrt(dx * dx + dy * dy + dz * dz);
     }
 
+    LLA GNSSDeceptionError::interpolate_deception_points(
+        const LLA& start_pos,
+        const LLA& target_deception_pos,
+        int t,
+        const LLA& target_velocity
+    ) {
+        // 起点
+        double lon0 = start_pos.lon_deg;
+        double lat0 = start_pos.lat_deg;
+        double h0 = start_pos.h_m;
+
+        // 方向向量（起点 -> 欺骗终点）
+        double dx = target_deception_pos.lon_deg - lon0;
+        double dy = target_deception_pos.lat_deg - lat0;
+
+        // 总距离
+        double dist_total = std::sqrt(dx * dx + dy * dy);
+
+        // 避免除 0
+        if (dist_total < 1e-12) {
+            return start_pos;
+        }
+
+        // 单位方向向量
+        double ux = dx / dist_total;
+        double uy = dy / dist_total;
+
+        // 目标真实飞行的距离
+        double vx = target_velocity.lon_deg;
+        double vy = target_velocity.lat_deg;
+        double dist_real = std::sqrt((vx * t) * (vx * t) + (vy * t) * (vy * t));
+
+        // 计算当前欺骗点
+        double lon = lon0 + ux * dist_real;
+        double lat = lat0 + uy * dist_real;
+        double h = h0;
+
+        LLA cur_deception_pos = { lon, lat, h, t };
+
+        return cur_deception_pos;
+    }
+
     // 筛选GDOP最优的4颗卫星
     std::vector<LLA> GNSSDeceptionError::select_optimal_satellites(const LLA& target_pos) const {
         // 转换目标到ECEF
@@ -152,7 +194,7 @@ namespace seven {
     }
 
     // 计算信号相对功率
-    double GNSSDeceptionError::calc_signal_power(const LLA& trans_pos, const LLA& recv_pos) const {
+    double GNSSDeceptionError::calc_signal_power(const LLA& trans_pos, const LLA& recv_pos, double freq) const {
         ECEF trans_ecef = lla_to_ecef(trans_pos);
         ECEF recv_ecef = lla_to_ecef(recv_pos);
         double dist = calc_ecef_distance(trans_ecef, recv_ecef);
@@ -169,14 +211,14 @@ namespace seven {
         // 计算真实卫星平均功率
         double real_power_sum = 0.0;
         for (const auto& sat : satellite_pos) {
-            real_power_sum += calc_signal_power(sat, target_pos);
+            real_power_sum += calc_signal_power(sat, target_pos, FREQ);
         }
         double real_power = real_power_sum / satellite_pos.size();
 
         // 计算欺骗信号平均功率
         double deception_power_sum = 0.0;
         for (const auto& jammer : params.jammer_pos) {
-            deception_power_sum += calc_signal_power(jammer, target_pos);
+            deception_power_sum += calc_signal_power(jammer, target_pos, params.jammer_freq);
         }
         double deception_power = deception_power_sum / params.jammer_pos.size();
 
@@ -346,6 +388,8 @@ namespace seven {
     std::vector<TrackResult> GNSSDeceptionError::batch_calculate(const std::vector<LLA>& track_points) {
         std::vector<TrackResult> results;
         for (const auto& point : track_points) {
+            LLA cur_deception_pos = interpolate_deception_points(params.plat_initial_pos, params.target_deception_pos, point.current_run_t, params.cur_plat_vec);
+            params.deception_pos = cur_deception_pos;
             results.push_back(calculate_error(point));
         }
         return results;
@@ -482,12 +526,13 @@ namespace seven {
             
             // 转换JSON航迹点到内部格式
             std::vector<LLA> track_points;
-            for (int j = 0; j < task_param.return_frames; j++) {
+            for (int j = 1; j < task_param.return_frames; j++) {
 
                 LLA target_pos;
                 target_pos.lon_deg = task_param.serveral_plat[i].cur_plat_pos.lon_deg + task_param.serveral_plat[i].cur_plat_vec.lon_deg * j;
                 target_pos.lat_deg = task_param.serveral_plat[i].cur_plat_pos.lat_deg + task_param.serveral_plat[i].cur_plat_vec.lat_deg * j;
                 target_pos.h_m = task_param.serveral_plat[i].cur_plat_pos.h_m + task_param.serveral_plat[i].cur_plat_vec.h_m * j;
+                target_pos.current_run_t = task_param.run_frames + j;
                 track_points.push_back(target_pos);
 
                 if (j == task_param.return_frames - 1)
@@ -495,9 +540,13 @@ namespace seven {
                     task_param.serveral_plat[i].cur_plat_pos = target_pos + task_param.serveral_plat[i].cur_plat_vec;
                 }
             }
+
+            //当前平台初始位置和速度初始化
+            deception_config.plat_initial_pos = task_param.serveral_plat[i].plat_initial_pos;
+            deception_config.cur_plat_vec = task_param.serveral_plat[i].cur_plat_vec;
             // 4. 欺骗点设置参数设置
-            deception_config.deception_pos = task_param.serveral_plat[i].deception_pos;
-            std::cout << "当前平台欺骗位置:{" << to_string(deception_config.deception_pos.lon_deg) << ", " << to_string(deception_config.deception_pos.lat_deg) << ", " << to_string(deception_config.deception_pos.h_m) << " }" << std::endl;
+            deception_config.target_deception_pos = task_param.serveral_plat[i].deception_pos;
+            std::cout << "当前平台欺骗位置:{" << to_string(deception_config.target_deception_pos.lon_deg) << ", " << to_string(deception_config.target_deception_pos.lat_deg) << ", " << to_string(deception_config.target_deception_pos.h_m) << " }" << std::endl;
             gnss_error.set_params(deception_config);
 
             // 5. 批量计算

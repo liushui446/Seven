@@ -223,6 +223,7 @@ namespace seven {
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
             //int jammer_num = input.get("jammer_num", 1).asInt();
             UINT return_frames = input.get("return_frames", 100).asInt();
+            double jammer_power = input.get("jammer_power", 20).asDouble();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
             // 1.设置beta参数
@@ -260,7 +261,8 @@ namespace seven {
                     // 你的结构高度单位看起来是 km，JSON 是 m，所以 /1000
                     jammer.pos = { lon, lat, h_m / 1000.0 };
                     // 配置干扰源
-                    jammer.power = 10.0; // W
+                    //jammer.power = 10.0; // W
+                    jammer.power = jammer_power / 200.0; // W
                     jammer.type = "continuous_wave";
                     jammer.bandwidth = 20e6;
                     jammer.freq = GNSS_FC;
@@ -354,8 +356,8 @@ namespace seven {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
             UINT return_frames = input.get("return_frames", 100).asInt();
+            double jammer_freq = input.get("jammer_freq", 1561.09e6).asDouble();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
-
             SimParams deception_config;
 
             // 1. 偏离角度：单位°，范围0~180，正值为顺时针偏离，负值为逆时针偏离（相对于原航迹方向）
@@ -373,6 +375,8 @@ namespace seven {
                 // 低干扰：
                 deviation_angle_deg = 20;
             }
+            //干扰源载波频率设置
+            deception_config.jammer_freq = jammer_freq;
 
             // 2.干扰源添加
             // 从 result JSON 中读取 jammer_list
@@ -409,7 +413,7 @@ namespace seven {
             // 新增：自定义欺骗航迹参数（可根据需求修改）
             // ==============================
             // 2. 航迹步数：step，每步对应原速度的一个时间单位，步数越多，欺骗点离初始位置越远
-            const int step = 100;                       // 示例：5步，可自行修改
+            const int step = 1400;                       // 示例：5步，可自行修改
             // 3. 角度转弧度（用于三角函数计算）
             const double deviation_angle_rad = deviation_angle_deg * M_PI / 180.0;
 
