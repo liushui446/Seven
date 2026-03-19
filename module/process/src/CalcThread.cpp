@@ -153,6 +153,15 @@ namespace seven
 		pMem_->bStartWork_.store(work, std::memory_order_release);
 	}
 
+	bool CalcProcessThread::SerTaskParam(Formation_Type input) {
+		std::lock_guard<std::mutex> lk(g_task_mutex);
+		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
+			return false;
+		}
+		SwitchFormation(input);
+		return true;
+	}
+
 	// 新增：提交计算任务并唤醒线程
 	bool CalcProcessThread::SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output) {
 		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
@@ -325,8 +334,8 @@ namespace seven
 			pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::BUSY));
 			lk.unlock(); // 释放锁，避免阻塞其他操作
 
-			try
-			{
+			/*try
+			{*/
 				auto start = std::chrono::high_resolution_clock::now();
 
 				// ========== 核心工作区：执行计算任务 ==========
@@ -415,15 +424,27 @@ namespace seven
 					}
 					else if (type == Cmd_Type::Transformation)
 					{
-						UAVFormationParams params = ContextManager::Ins().GetFormationParams();
-						vector<TrajectoryFrame> initial_trajectory = ContextManager::Ins().GetInitialTrajectory();
-						vector<TrajectoryFrame> end_trajectory = ContextManager::Ins().GetEndTrajectory();
-						Transformation_Use(params, initial_trajectory, end_trajectory, task_param->input, task_param->trajectory_result);
-						ContextManager::Ins().SetFormationParams(params);
-						ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
-						ContextManager::Ins().SetEndTrajectory(end_trajectory);
-						//Transformation_Use(task_param->input, task_param->trajectory_result);
-						sendResultData(task_param->hPipe, task_param->trajectory_result);
+						while (true) {
+							//判断是否运行到最大帧数
+							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+							if (run_frames_cnt_ >= (task_param->max_frames - 1)) {
+								break;
+							}
+
+							//判断是否被打断
+							bool is_interrupted = IsInterrupted(noThread);
+							if (is_interrupted) {
+								// 重置中断标志
+								ResetInterruptFlag(noThread);
+								// 切换状态为DORMANT（而非直接退出）
+								pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::DORMANT));
+								break;
+							}
+							FormationConfig params = ContextManager::Ins().GetFormationParams();
+							Transformation_Use(TempParam);
+							CalcParamManager::Ins().SetRunFramesCnt(TempParam.run_frames);
+							sendResultData(task_param->hPipe, TempParam.trajectory_result);
+						}
 					}
 
 					// 标记任务完成
@@ -445,12 +466,13 @@ namespace seven
 				std::string str = "CalcProcessThread::ThreadFunc(), Barrage_Test_1 Time Cost: [" +
 					std::to_string(duration) + "]ms";
 
-			}
-			catch (const std::exception& e)
-			{
-				// 异常处理
-				std::string err_str = "CalcProcessThread::ThreadFunc() exception: " + std::string(e.what());
-			}
+			//}
+			//catch (const std::exception& e)
+			//{
+			//	// 异常处理
+			//	std::string err_str = "CalcProcessThread::ThreadFunc() exception: " + std::string(e.what());
+			//	std::cerr << err_str << std::endl;
+			//}
 
 			// 重置线程状态为休眠
 			if (pMem_->ThdStats_[noThread].GetValue() != static_cast<int>(Pimple::ThreadStatus::QUIT) &&

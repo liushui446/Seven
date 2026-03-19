@@ -217,10 +217,10 @@ namespace seven {
 
         // 计算欺骗信号平均功率
         double deception_power_sum = 0.0;
-        for (const auto& jammer : params.jammer_pos) {
-            deception_power_sum += calc_signal_power(jammer, target_pos, params.jammer_freq);
+        for (const auto& jammer : params.jammers) {
+            deception_power_sum += calc_signal_power(jammer.pos, target_pos, jammer.freq);
         }
-        double deception_power = deception_power_sum / params.jammer_pos.size();
+        double deception_power = deception_power_sum / params.jammers.size();
 
         //if (real_power < 1e-12) return false;
 
@@ -237,7 +237,7 @@ namespace seven {
         std::vector<double> delays;
 
         for (int i = 0; i < params.jammer_num; ++i) {
-            ECEF jammer_ecef = lla_to_ecef(params.jammer_pos[i]);
+            ECEF jammer_ecef = lla_to_ecef(params.jammers[i].pos);
             ECEF sat_ecef = lla_to_ecef(satellite_pos[i]);
 
             double R_SD = calc_ecef_distance(sat_ecef, deception_ecef);
@@ -302,7 +302,7 @@ namespace seven {
         Eigen::VectorXd A(n);
         for (int i = 0; i < n; ++i) {
             ECEF sat_ecef = lla_to_ecef(satellite_pos[i]);
-            ECEF jammer_ecef = lla_to_ecef(params.jammer_pos[i]);
+            ECEF jammer_ecef = lla_to_ecef(params.jammers[i].pos);
 
             double R_SJ = calc_ecef_distance(sat_ecef, jammer_ecef);
             double R_JR = calc_ecef_distance(jammer_ecef, target_ecef);
@@ -397,119 +397,119 @@ namespace seven {
 
 
     // 示例使用
-    int Deception_Test(Json::Value input, Json::Value& trajectory_result) {
-        
-        Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
+    //int Deception_Test(Json::Value input, Json::Value& trajectory_result) {
+    //    
+    //    Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
 
-        // 若存在"jammer_num"则取其整数值，不存在则返回默认值0（可自定义）
-        int jammer_num = input.get("jammer_num", 1).asInt();
+    //    // 若存在"jammer_num"则取其整数值，不存在则返回默认值0（可自定义）
+    //    int jammer_num = input.get("jammer_num", 1).asInt();
 
-        // 1. 创建计算实例
-        GNSSDeceptionError gnss_error;
+    //    // 1. 创建计算实例
+    //    GNSSDeceptionError gnss_error;
 
-        // 2. (可选)自定义参数
-        SimParams deception_config;
-        deception_config.jammer_num = jammer_num;
-        //干扰源添加
-        for (int i = 0; i < jammer_num; i++)
-        {
-            LLA lla_jam_pos;
-            deception_config.jammer_pos.push_back(lla_jam_pos);
-        }
+    //    // 2. (可选)自定义参数
+    //    SimParams deception_config;
+    //    deception_config.jammer_num = jammer_num;
+    //    //干扰源添加
+    //    for (int i = 0; i < jammer_num; i++)
+    //    {
+    //        LLA lla_jam_pos;
+    //        deception_config.jammer_pos.push_back(lla_jam_pos);
+    //    }
 
-        //deception_config.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
-        //gnss_error.set_params(deception_config);
+    //    //deception_config.deception_pos = {115.32, 29.15, 1.5};  // 修改欺骗点
+    //    //gnss_error.set_params(deception_config);
 
-        if (jammer_strength == Jammer_Level::High)
-        {
-            deception_config.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
-        else if (jammer_strength == Jammer_Level::Middle)
-        {
-            deception_config.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
-        else if (jammer_strength == Jammer_Level::Low)
-        {
-            deception_config.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
-            gnss_error.set_params(deception_config);
-        }
+    //    if (jammer_strength == Jammer_Level::High)
+    //    {
+    //        deception_config.deception_pos = { 115.32, 29.33, 0.5 };  // 修改欺骗点
+    //        gnss_error.set_params(deception_config);
+    //    }
+    //    else if (jammer_strength == Jammer_Level::Middle)
+    //    {
+    //        deception_config.deception_pos = { 115.32, 29.23, 0.5 };  // 修改欺骗点
+    //        gnss_error.set_params(deception_config);
+    //    }
+    //    else if (jammer_strength == Jammer_Level::Low)
+    //    {
+    //        deception_config.deception_pos = { 115.32, 29.15, 0.5 };  // 修改欺骗点
+    //        gnss_error.set_params(deception_config);
+    //    }
 
-        // 3. 输入航迹数据
-        std::vector<LLA> track_points = {
-            {115.193, 29.027, 1},
-        };
+    //    // 3. 输入航迹数据
+    //    std::vector<LLA> track_points = {
+    //        {115.193, 29.027, 1},
+    //    };
 
-        LLA target_velocity = { 0.001, 0.0005, 0 };
+    //    LLA target_velocity = { 0.001, 0.0005, 0 };
 
-        UINT sim_time = 100;  // 仿真时长(s)200
+    //    UINT sim_time = 100;  // 仿真时长(s)200
 
-        LLA inital_pos = track_points[0];
-        for (int step = 0; step < sim_time; step++)
-        {
-            LLA target_pos;
-            target_pos = inital_pos + target_velocity * step;
-            track_points.push_back(target_pos);
-        }
+    //    LLA inital_pos = track_points[0];
+    //    for (int step = 0; step < sim_time; step++)
+    //    {
+    //        LLA target_pos;
+    //        target_pos = inital_pos + target_velocity * step;
+    //        track_points.push_back(target_pos);
+    //    }
 
-        // 4. 批量计算
-        std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
+    //    // 4. 批量计算
+    //    std::vector<TrackResult> results = gnss_error.batch_calculate(track_points);
 
-        // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
-        trajectory_result.clear(); // 可选，复用对象时建议保留
-        //干扰点信息
-        Json::Value& jammer_list = trajectory_result["jammer_list"];
-        for (int cnt = 0; cnt < deception_config.jammer_pos.size(); cnt++)
-        {
-            Json::Value jammer_mes;
-            jammer_mes["id"] = cnt + 1;
-            jammer_mes["pos_lla"]["lon_deg"] = deception_config.jammer_pos[cnt].lon_deg;
-            jammer_mes["pos_lla"]["lat_deg"] = deception_config.jammer_pos[cnt].lat_deg;
-            jammer_mes["pos_lla"]["h_m"] = deception_config.jammer_pos[cnt].h_m * 1000;      //km->m
+    //    // 5. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
+    //    trajectory_result.clear(); // 可选，复用对象时建议保留
+    //    //干扰点信息
+    //    Json::Value& jammer_list = trajectory_result["jammer_list"];
+    //    for (int cnt = 0; cnt < deception_config.jammer_pos.size(); cnt++)
+    //    {
+    //        Json::Value jammer_mes;
+    //        jammer_mes["id"] = cnt + 1;
+    //        jammer_mes["pos_lla"]["lon_deg"] = deception_config.jammer_pos[cnt].lon_deg;
+    //        jammer_mes["pos_lla"]["lat_deg"] = deception_config.jammer_pos[cnt].lat_deg;
+    //        jammer_mes["pos_lla"]["h_m"] = deception_config.jammer_pos[cnt].h_m * 1000;      //km->m
 
-            /*ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
-            jammer_centre.X = tmp_pos.X;
-            jammer_centre.Y = tmp_pos.Y;
-            jammer_centre.Z = tmp_pos.Z;*/
+    //        /*ECEF tmp_pos = sim.lla_to_ecef(config.jammers[cnt].pos);
+    //        jammer_centre.X = tmp_pos.X;
+    //        jammer_centre.Y = tmp_pos.Y;
+    //        jammer_centre.Z = tmp_pos.Z;*/
 
-            jammer_list.append(jammer_mes);
-        }
+    //        jammer_list.append(jammer_mes);
+    //    }
 
-        Json::Value& track_points_json = trajectory_result["track_points"]; // 航迹点数组引用，简化书写
+    //    Json::Value& track_points_json = trajectory_result["track_points"]; // 航迹点数组引用，简化书写
 
-        for (size_t i = 0; i < results.size(); ++i) {
-            const auto& res = results[i]; // 复用原代码的常量引用，避免拷贝
-            Json::Value track_point;      // 单个航迹点的JSON对象
+    //    for (size_t i = 0; i < results.size(); ++i) {
+    //        const auto& res = results[i]; // 复用原代码的常量引用，避免拷贝
+    //        Json::Value track_point;      // 单个航迹点的JSON对象
 
-            // 基础字段：航迹点序号（和原打印一致，i+1）
-            track_point["index"] = static_cast<int>(i + 1); // size_t转int，适配JsonCpp
+    //        // 基础字段：航迹点序号（和原打印一致，i+1）
+    //        track_point["index"] = static_cast<int>(i + 1); // size_t转int，适配JsonCpp
 
-            // 目标位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
-            track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // 经度(°)
-            track_point["target_pos"]["lat_deg"] = res.target_pos.lat_deg; // 纬度(°)
-            track_point["target_pos"]["h_m"] = res.target_pos.h_m;         // 高度(m)，原始单位
+    //        // 目标位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
+    //        track_point["target_pos"]["lon_deg"] = res.target_pos.lon_deg; // 经度(°)
+    //        track_point["target_pos"]["lat_deg"] = res.target_pos.lat_deg; // 纬度(°)
+    //        track_point["target_pos"]["h_m"] = res.target_pos.h_m;         // 高度(m)，原始单位
 
-            // 受干扰位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
-            track_point["error_pos"]["lon_deg"] = res.error_pos.lon_deg; // 经度(°)
-            track_point["error_pos"]["lat_deg"] = res.error_pos.lat_deg; // 纬度(°)
-            track_point["error_pos"]["h_m"] = res.error_pos.h_m;         // 高度(m)，原始单位
+    //        // 受干扰位置（经纬度高，°/°/m，修正原km标注，贴合h_m变量定义）
+    //        track_point["error_pos"]["lon_deg"] = res.error_pos.lon_deg; // 经度(°)
+    //        track_point["error_pos"]["lat_deg"] = res.error_pos.lat_deg; // 纬度(°)
+    //        track_point["error_pos"]["h_m"] = res.error_pos.h_m;         // 高度(m)，原始单位
 
-            // 欺骗有效标志：布尔值+字符串，兼顾程序解析和人工查看（和原打印一致）
-            track_point["deception_valid_bool"] = res.deception_valid; // 布尔值（推荐，解析友好）
+    //        // 欺骗有效标志：布尔值+字符串，兼顾程序解析和人工查看（和原打印一致）
+    //        track_point["deception_valid_bool"] = res.deception_valid; // 布尔值（推荐，解析友好）
 
-            // 定位误差（经纬度高，°/°/m，同目标位置的单位规范）
-            track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // 经度误差(°)
-            track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // 纬度误差(°)
-            track_point["pos_error"]["h_m"] = res.pos_error.h_m;         // 高度误差(m)，原始单位
-            // 可选：高度误差转千米，新增h_m字段
+    //        // 定位误差（经纬度高，°/°/m，同目标位置的单位规范）
+    //        track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // 经度误差(°)
+    //        track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // 纬度误差(°)
+    //        track_point["pos_error"]["h_m"] = res.pos_error.h_m;         // 高度误差(m)，原始单位
+    //        // 可选：高度误差转千米，新增h_m字段
 
-            // 将当前航迹点加入数组
-            track_points_json.append(track_point);
-        }
+    //        // 将当前航迹点加入数组
+    //        track_points_json.append(track_point);
+    //    }
 
-        return 0;
-    }
+    //    return 0;
+    //}
 
     int Deception_Use(CalcTempParam& task_param, SimParams& deception_config) {
 

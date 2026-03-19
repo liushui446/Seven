@@ -16,6 +16,11 @@
 #include <mutex>
 #include <fstream>
 #include <unordered_map>
+#include <cmath>
+#include <stdexcept>
+#include <mutex>
+#include <thread>
+#include <iomanip>
 
 # if (defined Windows)
 #   define SEVEN_EXPORTS __declspec(dllexport)
@@ -65,6 +70,7 @@ typedef unsigned short ushort;
 
 namespace seven
 {
+
     enum class Cmd_Type
     {
         Barrage = 1,             // 压制
@@ -190,31 +196,6 @@ namespace seven
         }
     };
 
-    class PlatformData
-    {
-    public:
-        PlatformData(UINT platform_id, LLA pos);
-
-        inline void setPlatformId(UINT id) { 
-            platform_id_ = id; 
-        }
-        inline UINT getPlatformId() {
-            return platform_id_;
-        }
-
-        inline void setPlatformPos(LLA pos) {
-            position_ = pos;
-        }
-        inline LLA getPlatformPos() {
-            return position_;
-        }
-
-
-    private:
-        UINT platform_id_;
-        LLA position_;
-    };
-
     /**
      * @brief 二维坐标结构体
      */
@@ -239,6 +220,9 @@ namespace seven
         }
 
         Point2D operator/(double scalar) const {
+            if (std::fabs(scalar) < 1e-6) {
+                throw std::runtime_error("Point2D division by zero");
+            }
             return { x / scalar, y / scalar };
         }
 
@@ -329,6 +313,47 @@ namespace seven
         std::atomic<int> run_frames;			 // 每次运行帧数
         std::atomic<int> return_frames;			 // 每次运行帧数
         vector<InputPlatParam> serveral_plat;
+    };
+
+    // UUV节点结构体（对应Python的UUVNode）
+    struct UUVNode {
+        int id;
+        //double lon;       // 经度
+        //double lat;       // 纬度
+        double speed;     // 速度 (m/s)
+        double heading;   // 航向 (度)
+        double rel_x;     // 相对东向坐标 (m)
+        double rel_y;     // 相对北向坐标 (m)
+        double target_x;  // 目标相对东向坐标 (m)
+        double target_y;  // 目标相对北向坐标 (m)
+        double last_rel_x;// 上一帧相对东向坐标
+        double last_rel_y;// 上一帧相对北向坐标
+        LLA pos_;         // 经纬度
+
+        UUVNode() : id(0), speed(0.0), heading(0.0),
+            rel_x(0.0), rel_y(0.0), target_x(0.0), target_y(0.0),
+            last_rel_x(0.0), last_rel_y(0.0), pos_() {}
+
+        UUVNode(int id_, double lon_, double lat_, double speed_, double heading_)
+            : id(id_), speed(speed_), heading(heading_),
+            rel_x(0.0), rel_y(0.0), target_x(0.0), target_y(0.0),
+            last_rel_x(0.0), last_rel_y(0.0), pos_() {}
+
+        UUVNode& operator=(const UUVNode& other) {
+
+            this->id = other.id;
+            this->speed = other.speed;
+            this->heading = other.heading;
+            this->rel_x = other.rel_x;
+            this->rel_y = other.rel_y;
+            this->target_x = other.target_x;
+            this->target_y = other.target_y;
+            this->last_rel_x = other.last_rel_x;
+            this->last_rel_y = other.last_rel_y;
+            this->pos_ = other.pos_;
+
+            return *this;
+        }
 
     };
 
@@ -337,10 +362,8 @@ namespace seven
      */
     struct TrajectoryFrame {
         int frame = 0;          // 帧数
-        double time = 0.0;      // 时间（秒）
-        int uav_id = 0;         // 节点ID
         Formation_Type formation;  // 当前队形
-        Point2D position;       // 位置坐标
+        vector<UUVNode> nodes_;     //节点数据
 
         // 可选：添加默认构造/拷贝构造，确保赋值正常
         TrajectoryFrame() = default;
@@ -396,6 +419,53 @@ namespace seven
 
     };
 
+    // 编队配置结构体
+    struct FormationConfig {
+        int node_num;                // 节点数量 (4~10)
+        int max_frames;           // 最大运行帧数(1500)
+        int return_frames;        // 返回结果数据帧数
+        double rel_distance;         // 节点间距 (m)
+        double collision_radius;     // 碰撞半径 (m)
+        double init_speed;           // 初始速度 (m/s)
+        double init_heading;         // 初始航向 (度)
+        double heading_rate;         // 航向变化率 (度/秒，正=逆时针，负=顺时针)
+        double acceleration;         // 加速度 (m/s²)
+        double sim_step;             // 仿真步长 (s)
+        LLA main_node;               // 主节点经纬度
+        Formation_Type trans_formation;  // 需要变换的队形(line/rect/circle/diamond/triangle)
+        Formation_Type current_formation;// 当前队形
+        
+        //double output_interval;      // 输出间隔 (s)
+
+        FormationConfig() : node_num(10), max_frames(3000),
+            return_frames(10), rel_distance(10.0), collision_radius(4.0),
+            init_speed(2.0), init_heading(0.0),heading_rate(2.0), acceleration(0.0), sim_step(0.1),
+            main_node(), trans_formation(Formation_Type::Line), current_formation(Formation_Type::Line){}
+
+        FormationConfig(const FormationConfig&) = default;
+
+        FormationConfig& operator=(const FormationConfig& other) {
+
+            this->node_num = other.node_num;
+            this->max_frames = other.max_frames;
+            this->return_frames = other.return_frames;
+            this->max_frames = other.max_frames;
+
+            this->rel_distance = other.rel_distance;
+            this->collision_radius = other.collision_radius;
+            this->init_speed = other.init_speed;
+            this->init_heading = other.init_heading;
+            this->heading_rate = other.heading_rate;
+            this->acceleration = other.acceleration;
+            this->main_node = other.main_node;
+
+            this->trans_formation = other.trans_formation;
+            this->current_formation = other.current_formation;
+
+            return *this;
+        }
+    };
+
     // 卫星参数结构体
     struct SatelliteParam {
         std::vector<LLA> sat_pos;  // 卫星经纬高列表(°/km)
@@ -444,6 +514,27 @@ namespace seven
         // 可选：添加默认构造/拷贝构造（保证结构体使用完整性）
         JammerParam() = default;
         JammerParam(const JammerParam& other) = default;
+    };
+
+    struct DecJammerParam {
+        LLA pos;             // 干扰源经纬高(°/km)
+        double freq;         // 干扰频率(Hz)
+
+        DecJammerParam& operator=(const DecJammerParam& other) {
+            // 1. 自赋值检查（避免不必要的拷贝，防止自我赋值导致的错误）
+            if (this == &other) {
+                return *this;
+            }
+
+            pos = other.pos;
+            freq = other.freq;
+
+            return *this;
+        }
+
+        // 可选：添加默认构造/拷贝构造（保证结构体使用完整性）
+        DecJammerParam() = default;
+        DecJammerParam(const DecJammerParam& other) = default;
     };
 
     // 核心仿真配置结构体
@@ -509,6 +600,8 @@ namespace seven
         double jammer_freq = 1561.09e6;
         // 干扰装备参数
         int jammer_num = 4;
+
+        std::vector<DecJammerParam> jammers = {};
         std::vector<LLA> jammer_pos = {};
         /*std::vector<LLA> jammer_pos = {
             {115.2, 29.0, 1.0},
@@ -550,6 +643,7 @@ namespace seven
             this->deception_pos = other.deception_pos;
             this->target_deception_pos = other.target_deception_pos;
             this->jammer_pos = other.jammer_pos;
+            this->jammers = other.jammers;
             this->platsparam = other.platsparam;
             return *this;
         }
@@ -557,6 +651,31 @@ namespace seven
         // 可选：添加默认构造/拷贝构造
         SimParams() = default;
         SimParams(const SimParams&) = default;
+    };
+
+    class PlatformData
+    {
+    public:
+        PlatformData(UINT platform_id, LLA pos);
+
+        inline void setPlatformId(UINT id) {
+            platform_id_ = id;
+        }
+        inline UINT getPlatformId() {
+            return platform_id_;
+        }
+
+        inline void setPlatformPos(LLA pos) {
+            position_ = pos;
+        }
+        inline LLA getPlatformPos() {
+            return position_;
+        }
+
+
+    private:
+        UINT platform_id_;
+        LLA position_;
     };
 
 }

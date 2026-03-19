@@ -95,7 +95,7 @@ namespace seven
      * @brief 设置完整的编队参数（覆盖式）
      * @param params 新的编队参数
      */
-    void ContextManager::SetFormationParams(const UAVFormationParams& params) {
+    void ContextManager::SetFormationParams(const FormationConfig& params) {
         std::unique_lock<std::mutex> lk(mMutex_); // 线程安全锁
         m_formationParams = params;
     }
@@ -104,7 +104,7 @@ namespace seven
      * @brief 获取编队参数（拷贝返回，避免外部修改内部数据）
      * @return 编队参数的拷贝
      */
-    UAVFormationParams ContextManager::GetFormationParams() {
+    FormationConfig ContextManager::GetFormationParams() {
         std::unique_lock<std::mutex> lk(mMutex_);
         return m_formationParams;
     }
@@ -116,19 +116,19 @@ namespace seven
      * @param trans_formation 目标队形（可选）
      * 可根据需要扩展更多参数
      */
-    void ContextManager::UpdateFormationParams(int num_uavs = -1,
-        double interval = -1.0,
-        double collision_radius = 2,
-        Formation_Type* trans_formation = nullptr,
-        Point2D* pos_center = nullptr) {
-        std::unique_lock<std::mutex> lk(mMutex_);
-        if (num_uavs >= 0) m_formationParams.num_uavs = num_uavs;
-        if (interval >= 0.0) m_formationParams.interval = interval;
-        if (interval >= 0.0) m_formationParams.collision_radius = collision_radius;
-        if (trans_formation != nullptr) m_formationParams.trans_formation = *trans_formation;
-        if (pos_center != nullptr) m_formationParams.pos_center = *pos_center;
-        // 可继续扩展其他字段的增量更新
-    }
+    //void ContextManager::UpdateFormationParams(int num_uavs = -1,
+    //    double interval = -1.0,
+    //    double collision_radius = 2,
+    //    Formation_Type* trans_formation = nullptr,
+    //    Point2D* pos_center = nullptr) {
+    //    std::unique_lock<std::mutex> lk(mMutex_);
+    //    if (num_uavs >= 0) m_formationParams.num_uavs = num_uavs;
+    //    if (interval >= 0.0) m_formationParams.interval = interval;
+    //    if (interval >= 0.0) m_formationParams.collision_radius = collision_radius;
+    //    if (trans_formation != nullptr) m_formationParams.trans_formation = *trans_formation;
+    //    if (pos_center != nullptr) m_formationParams.pos_center = *pos_center;
+    //    // 可继续扩展其他字段的增量更新
+    //}
 
     // ====================== initial_trajectory 相关接口 ======================
     /**

@@ -53,11 +53,11 @@ namespace seven
 
     public:
 
-        void SetFormationParams(const UAVFormationParams& params);
+        void SetFormationParams(const FormationConfig& params);
 
-        UAVFormationParams GetFormationParams();
+        FormationConfig GetFormationParams();
 
-        void UpdateFormationParams(int num_uavs, double interval, double collision_radius, Formation_Type* trans_formation, Point2D* pos_center);
+        //void UpdateFormationParams(int num_uavs, double interval, double collision_radius, Formation_Type* trans_formation, Point2D* pos_center);
 
         void SetInitialTrajectory(const std::vector<TrajectoryFrame>& trajectory);
 
@@ -83,7 +83,7 @@ namespace seven
 
     private:
 
-        UAVFormationParams m_formationParams;
+        FormationConfig m_formationParams;
         vector<TrajectoryFrame> initial_trajectory;
         vector<TrajectoryFrame> end_trajectory;
 

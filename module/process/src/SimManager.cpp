@@ -94,6 +94,28 @@ namespace seven {
                 result["message"] = "sim end, please restart";
                 return -1;
             }
+            else if (sim_state_ == SimState::RUNNING)
+            {
+                //队形变换
+                bool isSwitch = input.get("isSwitch", 0).asBool();
+                if (isSwitch)
+                {
+                    try {
+                        Formation_Type trans_formation = static_cast<Formation_Type>(input.get("formation_type", 5).asInt());
+                        calc_thread_ptr->SerTaskParam(trans_formation);
+                        result["status"] = "error";
+                        result["message"] = "send switch formation command success!";
+                    }
+                    catch (const std::exception& e) {
+
+                        calc_thread_ptr->UnInit();
+                        sim_state_ == SimState::ENDDING;
+                        result["status"] = "error";
+                        result["message"] = std::string("switch formation fail: ") + e.what();
+                        return -1;
+                    }
+                }
+            }
         }
         else
         {
@@ -139,13 +161,6 @@ namespace seven {
             else if (type == Cmd_Type::Transformation)
             {
                 ret = calc_thread_ptr->SubmitTask(hPipe, input, output);
-                /*UAVFormationParams params = ContextManager::Ins().GetFormationParams();
-                vector<TrajectoryFrame> initial_trajectory = ContextManager::Ins().GetInitialTrajectory();
-                vector<TrajectoryFrame> end_trajectory = ContextManager::Ins().GetEndTrajectory();
-                Transformation_Use(params, initial_trajectory, end_trajectory, input, result);
-                ContextManager::Ins().SetFormationParams(params);
-                ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
-                ContextManager::Ins().SetEndTrajectory(end_trajectory);*/
             }
             if (ret) {}
 
@@ -223,7 +238,6 @@ namespace seven {
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
             //int jammer_num = input.get("jammer_num", 1).asInt();
             UINT return_frames = input.get("return_frames", 100).asInt();
-            double jammer_power = input.get("jammer_power", 20).asDouble();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
 
             // 1.设置beta参数
@@ -262,7 +276,8 @@ namespace seven {
                     jammer.pos = { lon, lat, h_m / 1000.0 };
                     // 配置干扰源
                     //jammer.power = 10.0; // W
-                    jammer.power = jammer_power / 200.0; // W
+                    double jammer_power_ = jammer_json.get("jammer_power", 10000.0).asDouble();
+                    jammer.power = jammer_power_ / 1000.0; // W 10000 / 1000 = 10    24000 / 1000 = 24
                     jammer.type = "continuous_wave";
                     jammer.bandwidth = 20e6;
                     jammer.freq = GNSS_FC;
@@ -356,7 +371,6 @@ namespace seven {
             // 解析输入参数
             Jammer_Level jammer_strength = static_cast<Jammer_Level>(input.get("jammer_level", 2).asInt());
             UINT return_frames = input.get("return_frames", 100).asInt();
-            double jammer_freq = input.get("jammer_freq", 1561.09e6).asDouble();
             CalcParamManager::Ins().SetReturnFramesCount(return_frames);
             SimParams deception_config;
 
@@ -375,8 +389,8 @@ namespace seven {
                 // 低干扰：
                 deviation_angle_deg = 20;
             }
-            //干扰源载波频率设置
-            deception_config.jammer_freq = jammer_freq;
+            
+            //deception_config.jammer_freq = jammer_freq;
 
             // 2.干扰源添加
             // 从 result JSON 中读取 jammer_list
@@ -386,6 +400,7 @@ namespace seven {
                 jammer_list = input["jammer_list"];
                 int jammer_num = jammer_list.size();
                 deception_config.jammer_pos.clear();
+                deception_config.jammers.clear();
                 //deception_config.jammer_pos.resize(jammer_num);
                 for (int cnt = 0; cnt < jammer_num; cnt++)
                 {
@@ -396,9 +411,11 @@ namespace seven {
                     double h_m = jammer_json["jammer_pos"]["h_m"].asDouble();
 
                     std::cout << "接收到的干扰源位置:{" << to_string(lon) << ", " << to_string(lat) << ", " << to_string(h_m) << std::endl;
-
-                    LLA jammer_pos_ = { lon ,lat, h_m / 1000 };
-                    deception_config.jammer_pos.push_back(jammer_pos_);
+                    DecJammerParam param;
+                    param.pos = { lon ,lat, h_m / 1000 };
+                    //干扰源载波频率设置
+                    param.freq = jammer_json.get("jammer_freq", 1561.09e6).asDouble();
+                    deception_config.jammers.push_back(param);
                 }
             }
             else
@@ -518,30 +535,27 @@ namespace seven {
         }
         else if (type == Cmd_Type::Transformation)
         {
-            vector<TrajectoryFrame> initial_trajectory;
-            vector<TrajectoryFrame> end_trajectory;
-            UAVFormationParams formation_param_;
-            formation_param_.num_uavs = input["num_uavs"].asInt();
-            formation_param_.interval = input["interval"].asDouble();
+            /*vector<TrajectoryFrame> initial_trajectory;
+            vector<TrajectoryFrame> end_trajectory;*/
+            FormationConfig formation_param_;
+            formation_param_.main_node = { input["pos_lon"].asDouble(), input["pos_lat"].asDouble()};
+            formation_param_.node_num = input["num_uavs"].asInt();
+            formation_param_.init_heading = input["init_heading"].asDouble();
+            formation_param_.init_speed = input["init_speed"].asDouble();
+            formation_param_.heading_rate = input["heading_rate"].asDouble();
+            formation_param_.rel_distance = input["interval"].asDouble();
             formation_param_.collision_radius = input["collision_radius"].asDouble();
-            //formation_param_.switch_interval = input["switch_interval"].asDouble();
-            formation_param_.max_frames = input["max_frames"].asInt();
-            formation_param_.trans_formation = static_cast<Formation_Type>(input["formation"].asInt());
-            //formation_param_.pos_center = Point2D(input["pos_center_x"].asDouble(), input["pos_center_y"].asDouble());
+            UINT return_frames = input.get("return_frames", 4).asInt();
+            formation_param_.return_frames = return_frames;
+            CalcParamManager::Ins().SetReturnFramesCount(return_frames);
+            CalcParamManager::Ins().SetSimTime(3000);
+            //formation_param_.max_frames = input["max_frames"].asInt();
+            formation_param_.trans_formation = static_cast<Formation_Type>(input["formation_type"].asInt());
 
-            /*std::cout << "===== 解析JSON取值验证 =====" << std::endl;
-            std::cout << "input[\"num_uavs\"] = " << input["num_uavs"].asInt() << std::endl;
-            std::cout << "input[\"interval\"] = " << input["interval"].asDouble() << std::endl;
-            std::cout << "input[\"formation\"] = " << input["formation"].asInt() << std::endl;
-            std::cout << "===== 赋值后formation_param_数值 =====" << std::endl;
-            std::cout << "num_uavs = " << formation_param_.num_uavs << std::endl;
-            std::cout << "interval = " << formation_param_.interval << std::endl;
-            std::cout << "formation = " << static_cast<int>(formation_param_.trans_formation) << std::endl;*/
-
-            Init_formation(formation_param_, initial_trajectory, end_trajectory, result);
+            Init_formation(formation_param_, result);
             ContextManager::Ins().SetFormationParams(formation_param_);
-            ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
-            ContextManager::Ins().SetEndTrajectory(end_trajectory);
+            /*ContextManager::Ins().SetInitialTrajectory(initial_trajectory);
+            ContextManager::Ins().SetEndTrajectory(end_trajectory);*/
         }
     }
     
