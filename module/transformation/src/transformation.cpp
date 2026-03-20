@@ -566,6 +566,7 @@ namespace seven {
                 // 4.1 构建单个帧对象
                 Json::Value frame_obj;
                 frame_obj["frame_id"] = frame_id;
+                frame_obj["formation_type"] = static_cast<int>(group.formation);
 
                 // 4.2 构建该帧下的nodes数组
                 Json::Value nodes(Json::arrayValue);
@@ -607,6 +608,13 @@ namespace seven {
             printf("仿真器未初始化！\n");
         }
         g_pFormationSimulator->switch_formation(type);
+    }
+
+    void TurnFormation(double heading_rate) {
+        if (g_pFormationSimulator == nullptr) {
+            printf("仿真器未初始化！\n");
+        }
+        g_pFormationSimulator->set_heading_rate(heading_rate);
     }
 
     //void Transformation_Use(CalcTempParam& task_param) {
@@ -700,6 +708,7 @@ namespace seven {
 
             Json::Value frame_obj;
             frame_obj["frame_id"] = frame_id;
+            frame_obj["formation_type"] = static_cast<int>(group.formation);
 
             Json::Value nodes_array(Json::arrayValue); // 节点数组
 

@@ -153,7 +153,7 @@ namespace seven
 		pMem_->bStartWork_.store(work, std::memory_order_release);
 	}
 
-	bool CalcProcessThread::SerTaskParam(Formation_Type input) {
+	bool CalcProcessThread::SerSwitchTaskParam(Formation_Type input) {
 		std::lock_guard<std::mutex> lk(g_task_mutex);
 		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
 			return false;
@@ -162,7 +162,66 @@ namespace seven
 		return true;
 	}
 
+	bool CalcProcessThread::SerTurnTaskParam(double input)
+	{
+		std::lock_guard<std::mutex> lk(g_task_mutex);
+		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
+			return false;
+		}
+		TurnFormation(input);
+		return true;
+	}
+
 	// 新增：提交计算任务并唤醒线程
+	//bool CalcProcessThread::SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output) {
+	//	if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
+	//		return false;
+	//	}
+
+	//	// 1. 查找空闲线程
+	//	int idle_thread = -1;
+	//	for (int i = 0; i < pMem_->iThreadNum_; ++i) {
+	//		if (pMem_->ThdStats_[i].GetValue() == static_cast<int>(Pimple::ThreadStatus::DORMANT)) {
+	//			idle_thread = i;
+	//			break;
+	//		}
+	//	}
+
+	//	if (idle_thread == -1) {
+	//		return false; // 无空闲线程
+	//	}
+
+	//	// 2. 创建任务参数
+	//	auto task_param = std::make_shared<CalcTaskParam>();
+	//	task_param->hPipe = hPipe;
+	//	task_param->max_frames = CalcParamManager::Ins().GetCalcParam().sim_time_;
+	//	task_param->run_frames = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
+	//	task_param->return_frames = CalcParamManager::Ins().GetCalcParam().return_frames;
+	//	task_param->serveral_plat = CalcParamManager::Ins().GetPlatform();
+	//	task_param->input = input;
+	//	task_param->task_finished = false;
+
+	//	// 3. 将任务加入队列
+	//	{
+	//		std::lock_guard<std::mutex> lk(g_task_mutex);
+	//		g_task_queue.push_back(task_param);
+	//	}
+
+	//	// 4. 唤醒指定空闲线程
+	//	if (WakeUpAThread(idle_thread)) {
+	//		// 等待任务完成
+	//		std::unique_lock<std::mutex> lk(g_task_mutex);
+	//		g_task_cv.wait(lk, [&]() {
+	//			return task_param->task_finished.load(std::memory_order_acquire);
+	//			});
+	//		//output = task_param->trajectory_result;
+	//		return true;
+	//	}
+
+	//	return false;
+	//}
+
+	// 新增：提交计算任务并唤醒线程（无等待版本）
 	bool CalcProcessThread::SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output) {
 		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
 			return false;
@@ -199,12 +258,10 @@ namespace seven
 
 		// 4. 唤醒指定空闲线程
 		if (WakeUpAThread(idle_thread)) {
-			// 等待任务完成
-			std::unique_lock<std::mutex> lk(g_task_mutex);
-			g_task_cv.wait(lk, [&]() {
-				return task_param->task_finished.load(std::memory_order_acquire);
-				});
-			//output = task_param->trajectory_result;
+			// ===================== 关键移除：删除等待逻辑 =====================
+			// 原来的 wait 会阻塞在这里，现在直接返回 true
+			// 任务会在线程后台异步执行
+			// ==================================================================
 			return true;
 		}
 
@@ -427,9 +484,9 @@ namespace seven
 						while (true) {
 							//判断是否运行到最大帧数
 							UINT run_frames_cnt_ = CalcParamManager::Ins().GetCalcParam().run_frames_cnt;
-							if (run_frames_cnt_ >= (task_param->max_frames - 1)) {
+							/*if (run_frames_cnt_ >= (task_param->max_frames - 1)) {
 								break;
-							}
+							}*/
 
 							//判断是否被打断
 							bool is_interrupted = IsInterrupted(noThread);

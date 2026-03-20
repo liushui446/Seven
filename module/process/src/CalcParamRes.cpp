@@ -9,13 +9,25 @@ namespace seven
     }
 
     CalcParamManager::CalcParamManager()
-        : mMutex_(), vCalcParam_()
+        : sim_state_(SimState::ENDDING), mMutex_(), vCalcParam_()
     {
         vServerPlatformData_.clear();
     }
 
     CalcParamManager::~CalcParamManager()
     {
+    }
+
+    SimState CalcParamManager::getSimSimState()
+    {
+        std::unique_lock<std::mutex> lk(mMutex_);
+        return sim_state_;
+    }
+
+    void CalcParamManager::setSimSimState(SimState state)
+    {
+        std::unique_lock<std::mutex> lk(mMutex_);
+        sim_state_ = state;
     }
 
     bool CalcParamManager::ClearAllData()

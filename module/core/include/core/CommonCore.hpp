@@ -70,6 +70,12 @@ typedef unsigned short ushort;
 
 namespace seven
 {
+    enum class SimState {
+        ENDDING = 0,  // 仿真终止
+        STOPPED = 1,  // 仿真暂停
+        RUNNING = 2,   // 仿真运行中
+        IDLE = 3   // 仿真准备状态
+    };
 
     enum class Cmd_Type
     {

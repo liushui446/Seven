@@ -28,7 +28,8 @@ namespace seven
 		void ReloadAllThread();
 		unsigned int GetThreadNum();
 		void StartWork(bool work);
-		bool SerTaskParam(Formation_Type input);
+		bool SerSwitchTaskParam(Formation_Type input);
+		bool SerTurnTaskParam(double input);
 		bool SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output);
 		bool WakeUpAThread(int noThread);
 		bool Interrupted();

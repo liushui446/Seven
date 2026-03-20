@@ -17,14 +17,26 @@ using namespace Json;
 
 namespace seven {
 
+    /*std::shared_ptr<SimManager>& SimManager::Ins()
+    {
+        static std::shared_ptr<SimManager> instance;
+        return instance;
+    }*/
+
     SimManager::SimManager() : sim_state_(SimState::ENDDING), sim_time_(2000), calc_thread_ptr(nullptr){}
+
+    /*SimManager::~SimManager()
+    {
+    }*/
 
     // 1. 仿真开始接口
     int SimManager::sim_start(const Json::Value& input, Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
+        SimState sim_state_temp = CalcParamManager::Ins().getSimSimState();
+        std::cout << "sim_start 获取当前仿真状态：" << int(sim_state_temp) << std::endl;
         // 检查当前状态
-        if (sim_state_ == SimState::RUNNING) {
+        if (sim_state_temp == SimState::RUNNING) {
             result["status"] = "error";
             result["message"] = "sim is running, do not restart";
             return -1;
@@ -63,7 +75,9 @@ namespace seven {
             result["message"] = "sim started success";
 
             // 更新仿真状态
-            sim_state_ = SimState::IDLE;
+            sim_state_temp = SimState::IDLE;
+            CalcParamManager::Ins().setSimSimState(sim_state_temp);
+            std::cout << "sim_start 设置仿真状态：" << int(sim_state_temp) << std::endl;
         }
         catch (const std::exception& e) {
             result["status"] = "error";
@@ -77,6 +91,8 @@ namespace seven {
     int SimManager::sim_calc(HANDLE hPipe, const Json::Value& input, Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
+        SimState sim_state_temp = CalcParamManager::Ins().getSimSimState();
+        std::cout << "sim_calc 获取当前仿真状态：" << int(sim_state_temp) << std::endl;
         int cmd_int = input.get("cmd", 4).asInt();
         if (cmd_int != 1 && cmd_int != 2 && cmd_int != 3) {
             result["status"] = "error";  // 字符串值
@@ -88,40 +104,61 @@ namespace seven {
         //状态判断
         if (type == Cmd_Type::Transformation)
         {
-            if (sim_state_ == SimState::ENDDING)
+            if (sim_state_temp == SimState::ENDDING)
             {
                 result["status"] = "error";
                 result["message"] = "sim end, please restart";
                 return -1;
             }
-            else if (sim_state_ == SimState::RUNNING)
+            else if (sim_state_temp == SimState::RUNNING)
             {
                 //队形变换
-                bool isSwitch = input.get("isSwitch", 0).asBool();
+                bool isSwitch = input.get("isSwitch", false).asBool();
+                bool isTurn = input.get("isTurn", false).asBool();
+                
                 if (isSwitch)
                 {
                     try {
                         Formation_Type trans_formation = static_cast<Formation_Type>(input.get("formation_type", 5).asInt());
-                        calc_thread_ptr->SerTaskParam(trans_formation);
-                        result["status"] = "error";
-                        result["message"] = "send switch formation command success!";
+                        calc_thread_ptr->SerSwitchTaskParam(trans_formation);
+                        result["status"] = "success";
+                        result["message_a"] = "send switch formation command success!";
                     }
                     catch (const std::exception& e) {
 
                         calc_thread_ptr->UnInit();
                         sim_state_ == SimState::ENDDING;
                         result["status"] = "error";
-                        result["message"] = std::string("switch formation fail: ") + e.what();
+                        result["message"] = std::string("send switch formation command fail: ") + e.what();
                         return -1;
                     }
                 }
+
+                if (isTurn)
+                {
+                    try {
+                        double heading_rate = input.get("heading_rate", 0.0).asDouble();
+                        calc_thread_ptr->SerTurnTaskParam(heading_rate);
+                        result["status"] = "success";
+                        result["message_b"] = "send turn command success!";
+                    }
+                    catch (const std::exception& e) {
+
+                        calc_thread_ptr->UnInit();
+                        sim_state_ == SimState::ENDDING;
+                        result["status"] = "error";
+                        result["message"] = std::string("send turn command fail: ") + e.what();
+                        return -1;
+                    }
+                }
+                return 0;
             }
         }
         else
         {
             // 检查仿真状态
-            if (sim_state_ != SimState::IDLE && sim_state_ != SimState::STOPPED) {
-                if (sim_state_ == SimState::RUNNING)
+            if (sim_state_temp != SimState::IDLE && sim_state_temp != SimState::STOPPED) {
+                if (sim_state_temp == SimState::RUNNING)
                 {
                     result["status"] = "error";
                     result["message"] = "sim is running";
@@ -139,8 +176,9 @@ namespace seven {
             result.clear();
             result["status"] = "success";
             // 更新仿真状态
-            sim_state_ == SimState::RUNNING;
-
+            sim_state_temp = SimState::RUNNING;
+            CalcParamManager::Ins().setSimSimState(sim_state_temp);
+            std::cout << "sim_calc 设置仿真状态：" << int(sim_state_temp) << std::endl;
             std::cerr << "仿真开始..." << std::endl;
 
             // 3. 提交任务（内部会自动唤醒线程）
@@ -168,7 +206,7 @@ namespace seven {
         catch (const std::exception& e) {
 
             calc_thread_ptr->UnInit();
-            sim_state_ == SimState::ENDDING;
+            sim_state_ = SimState::ENDDING;
             result["status"] = "error";
             result["message"] = std::string("calc fail: ") + e.what();
             return -1;
@@ -181,9 +219,11 @@ namespace seven {
     int SimManager::sim_stop(Json::Value& result) {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
+        SimState sim_state_temp = CalcParamManager::Ins().getSimSimState();
+        std::cout << "sim_stop 获取当前仿真状态：" << int(sim_state_temp) << std::endl;
         result.clear();
 
-        if (sim_state_ != SimState::RUNNING) {
+        if (sim_state_temp != SimState::RUNNING) {
             result["status"] = "warning";
             result["message"] = "sim is not running, do not stop";
             return 0;
@@ -192,7 +232,9 @@ namespace seven {
         calc_thread_ptr->Interrupted();
 
         // 重置状态和配置
-        sim_state_ = SimState::STOPPED;
+        sim_state_temp = SimState::STOPPED;
+        CalcParamManager::Ins().setSimSimState(sim_state_temp);
+        std::cout << "sim_stop 设置仿真状态：" << int(sim_state_temp) << std::endl;
 
         result["status"] = "success";
         result["message"] = "sim stop";
@@ -204,9 +246,11 @@ namespace seven {
     {
         std::lock_guard<std::mutex> lock(sim_mutex_);
 
+        SimState sim_state_temp = CalcParamManager::Ins().getSimSimState();
+        std::cout << "sim_end 获取当前仿真状态：" << int(sim_state_temp) << std::endl;
         result.clear();
 
-        if (sim_state_ == SimState::ENDDING) {
+        if (sim_state_temp == SimState::ENDDING) {
             result["status"] = "warning";
             result["message"] = "sim done, need not end";
             return 0;
@@ -218,7 +262,9 @@ namespace seven {
         //calc_thread_ptr->UnInit();
 
         // 更新仿真状态
-        sim_state_ = SimState::ENDDING;
+        sim_state_temp = SimState::ENDDING;
+        CalcParamManager::Ins().setSimSimState(sim_state_temp);
+        std::cout << "sim_end 设置仿真状态：" << int(sim_state_temp) << std::endl;
 
         result["status"] = "success";
         result["message"] = "sim done";

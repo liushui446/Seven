@@ -8,7 +8,6 @@
 namespace seven
 {
     
-
     class SEVEN_EXPORTS CalcParamManager
     {
     public:
@@ -19,6 +18,9 @@ namespace seven
         ~CalcParamManager();
 
     public:
+        SimState getSimSimState();
+        void setSimSimState(SimState state);
+
         bool ClearAllData();
 
         bool SetReturnFramesCount(UINT vRes);
@@ -31,6 +33,7 @@ namespace seven
         std::vector<InputPlatParam>& GetPlatform();
 
     private:
+        SimState sim_state_;          // 仿真状态
         CalcParam vCalcParam_;
         std::vector<InputPlatParam> vServerPlatformData_;
         std::mutex mMutex_;

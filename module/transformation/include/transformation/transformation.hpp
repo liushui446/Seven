@@ -120,6 +120,8 @@ namespace seven{
 
     void SEVEN_EXPORTS SwitchFormation(const Formation_Type& type);
 
+    void SEVEN_EXPORTS TurnFormation(double heading_rate);
+
     // 全局仿真器实例（服务端单例使用）
     extern UUVFormationSimulator* g_pFormationSimulator;
 
