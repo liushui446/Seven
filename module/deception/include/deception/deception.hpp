@@ -5,13 +5,12 @@
 
 namespace seven {
 
-    
-
     // 航迹计算结果结构体
     struct TrackResult {
         LLA target_pos;          // 目标位置
         LLA error_pos;           // 受干扰后位置
         LLA pos_error;           // 定位误差(经纬度高)
+        LLA deception_pos;       // 当前欺骗点位置
         bool deception_valid;    // 欺骗信号是否有效
     };
 
@@ -75,7 +74,7 @@ namespace seven {
         std::vector<TrackResult> batch_calculate(const std::vector<LLA>& track_points);
     };
 
-    int SEVEN_EXPORTS Deception_Test(Json::Value input, Json::Value& trajectory_result);
+    //int SEVEN_EXPORTS Deception_Test(Json::Value input, Json::Value& trajectory_result);
     //int SEVEN_EXPORTS Deception_Use(std::vector<InputPlatParam>& server_platform_data, Json::Value& trajectory_result);
     int SEVEN_EXPORTS Deception_Use(CalcTempParam& task_param, SimParams& deception_config);
     

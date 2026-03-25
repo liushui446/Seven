@@ -69,6 +69,7 @@ namespace seven{
         double last_output_time;
         bool is_transition;
         Formation_Type last_formation;
+        int max_id; // 跟踪最大节点ID
         std::mutex sim_mutex;  // 线程安全锁
 
         // 私有方法
@@ -80,10 +81,10 @@ namespace seven{
         void _transition_formation();
         std::vector<Point2D> checkCollision1(const std::vector<Point2D>& positions);
         void apply_collision_avoidance();
-       // void _record_transition_step(Json::Value& trajectory_result);
         std::pair<double, double> _geo2enu(double lon, double lat, double rlon, double rlat);
         std::pair<double, double> _enu2geo(double x, double y, double rlon, double rlat);
         void _update_maneuver();
+        void _record_transition_step();
 
     public:
         // 构造函数
@@ -91,6 +92,10 @@ namespace seven{
 
         // 队形切换
         void switch_formation(const Formation_Type& cmd);
+
+        void add_node(double lon, double lat, double speed, double heading, int join_frames);
+
+        void remove_last_node();
 
         // 仿真步进
         UAVTrajectory& step_simulation();
@@ -122,109 +127,14 @@ namespace seven{
 
     void SEVEN_EXPORTS TurnFormation(double heading_rate);
 
+    void SEVEN_EXPORTS AddNode(double lon, double lat, double speed, double heading, int join_frames);
+
+    void SEVEN_EXPORTS RemoveLastNode();
+
     // 全局仿真器实例（服务端单例使用）
     extern UUVFormationSimulator* g_pFormationSimulator;
 
 }
 
-namespace seven {
-
-    
-
-    /**
-    * @brief 无人机编队变换核心类
-    */
-    class UAVFormationTransformer {
-    private:
-        UAVFormationParams params_;              // 初始化参数
-        UAVTrajectory trajectory_;               // 轨迹数据
-        std::vector<Point2D> current_positions_; // 当前位置
-        std::vector<Point2D> target_positions_;  // 目标位置
-        std::vector<double> initial_distances_;   // 缓存每架无人机到匹配目标的初始距离
-        //int current_formation_idx_ = 0;        // 当前队形索引
-        Formation_Type current_formation;        // 当前队形
-        int frame_count_ = 0;                    // 当前帧数
-
-        /**
-         * @brief 生成指定类型的队形位置
-         */
-        std::vector<Point2D> generateFormation(const Formation_Type& formation_type);
-
-        //动态调整平缓指数
-        double calculateDynamicAlpha(int uav_idx, double current_dist);
-
-        /**
-         * @brief 匹配最近的目标位置
-         */
-        std::vector<int> matchClosestTarget();
-
-        /**
-        * @brief 碰撞检测与位置调整
-        */
-        std::vector<Point2D> checkCollision(const std::vector<Point2D>& positions);
-
-        std::vector<Point2D> checkCollision1(const std::vector<Point2D>& positions);
-
-        /**
-         * @brief 更新无人机位置（平滑过渡）
-         */
-        bool updatePositions();
-
-    public:
-        /**
-         * @brief 构造函数（初始化参数）
-         */
-        UAVFormationTransformer();
-
-        //初始化参数
-        void InitialParams(UAVFormationParams& forparams_);
-
-        //初始化队形
-        Formation_Type InitialFormation();
-
-        /**
-        * @brief 切换到下一个队形
-        */
-        void switchFormation();
-
-        /**
-         * @brief 运行编队变换计算（生成轨迹）
-         */
-        Formation_Type runTransformation(vector<TrajectoryFrame>& end_trajectory);
-
-        /**
-         * @brief 获取轨迹数据
-         */
-        const UAVTrajectory& getTrajectory() const;
-
-        /**
-         * @brief 获取当前队形名称
-         */
-        Formation_Type getCurrentFormation() const;
-
-        /**
-         * @brief 获取当前所有无人机位置
-         */
-        std::vector<Point2D> getCurrentPositions() const;
-
-        void setCurrentPositions(vector<TrajectoryFrame> positions_);
-
-        /**
-         * @brief 队形类型转string
-         */
-        //string formationToStr(Formation_Type type) const;
-
-    };
-
-    //void SEVEN_EXPORTS Transformation_Test(Json::Value input, Json::Value& trajectory_result);
-    void SEVEN_EXPORTS Transformation_Use(UAVFormationParams& params, vector<TrajectoryFrame>& initial_trajectory,
-        vector<TrajectoryFrame>& end_trajectory, Json::Value input, Json::Value& trajectory_result);
-    void SEVEN_EXPORTS Init_formation(UAVFormationParams& formation_param_, vector<TrajectoryFrame>& initial_trajectory,
-        vector<TrajectoryFrame>& end_trajectory, Json::Value& trajectory_result);
-
-    //static UAVFormationParams formation_param_;
-    //static vector<TrajectoryFrame> initial_trajectory;
-    //static vector<TrajectoryFrame> end_trajectory;
-}
 
 #endif

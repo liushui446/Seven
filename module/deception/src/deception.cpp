@@ -357,6 +357,7 @@ namespace seven {
     TrackResult GNSSDeceptionError::calculate_error(const LLA& target_pos) {
         TrackResult result;
         result.target_pos = target_pos;
+        result.deception_pos = params.deception_pos;
         result.deception_valid = false;
 
         // 1. 筛选最优卫星
@@ -581,6 +582,11 @@ namespace seven {
                 track_point["pos_error"]["lon_deg"] = res.pos_error.lon_deg; // 经度误差(°)
                 track_point["pos_error"]["lat_deg"] = res.pos_error.lat_deg; // 纬度误差(°)
                 track_point["pos_error"]["h_m"] = res.pos_error.h_m * 1000;         // 高度误差(m)，原始单位
+
+                // 当前欺骗点（经纬度高，°/°/m，同目标位置的单位规范）
+                track_point["deception_pos"]["lon_deg"] = res.deception_pos.lon_deg; // 经度误差(°)
+                track_point["deception_pos"]["lat_deg"] = res.deception_pos.lat_deg; // 纬度误差(°)
+                track_point["deception_pos"]["h_m"] = res.deception_pos.h_m * 1000;         // 高度误差(m)，原始单位
 
                 // 将当前航迹点加入数组
                 track_results.append(track_point);

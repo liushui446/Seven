@@ -5,10 +5,21 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <vector>
 
 using namespace Json;
 
 namespace seven {
+
+    // ====================== 全局基础参数 (若未在头文件定义) ======================
+    // 请确保这些参数与头文件或Python代码一致
+    // const double TRANSITION_SPEED = 0.08;
+    // const double COLLISION_RADIUS = 4.0;
+    // const int MAX_COLLISION_ITER = 15;
+    // const double MAX_ADJUST_STEP = 1.0;
+    // const double ERROR_STABLE_THRESHOLD = 0.02;
+    // const double MAX_SPEED = 5.0;
+    // const double R_EARTH = 6378137.0;
 
     // 全局仿真器实例
     UUVFormationSimulator* g_pFormationSimulator = nullptr;
@@ -52,16 +63,16 @@ namespace seven {
     // ====================== UUVFormationSimulator 实现 ======================
     UUVFormationSimulator::UUVFormationSimulator(const FormationConfig& cfg)
         : config(cfg), current_time(0.0), last_output_time(0.0),
-        is_transition(false), last_formation(cfg.current_formation){
+        is_transition(false), last_formation(cfg.current_formation), max_id(0) {
         trajectory_.clearAllTrajectory();
         _validate_config();
         _init_nodes();
-        trajectory_.addFrame((current_time * 10), last_formation, nodes);
+        trajectory_.addFrame((current_time * 10), config.trans_formation, nodes);
     }
 
     void UUVFormationSimulator::_validate_config() {
-        if (config.node_num < 3 || config.node_num > 10) {
-            throw std::invalid_argument("节点数量必须在3~10之间，当前值：" + std::to_string(config.node_num));
+        if (config.node_num < 2 || config.node_num > 10) {
+            throw std::invalid_argument("节点数量必须在2~10之间，当前值：" + std::to_string(config.node_num));
         }
         if (config.rel_distance <= 0.0) {
             throw std::invalid_argument("节点间距必须大于0");
@@ -75,6 +86,9 @@ namespace seven {
         main_node.pos_ = { config.main_node.lon_deg, config.main_node.lat_deg };
         main_node.speed = config.init_speed;
         main_node.heading = config.init_heading;
+        // 初始化新增字段
+        main_node.is_joining = false;
+        main_node.is_leaving = false;
         nodes.push_back(main_node);
 
         // 初始化从节点
@@ -84,9 +98,13 @@ namespace seven {
             node.pos_ = { config.main_node.lon_deg, config.main_node.lat_deg };
             node.speed = config.init_speed;
             node.heading = config.init_heading;
+            // 初始化新增字段
+            node.is_joining = false;
+            node.is_leaving = false;
             nodes.emplace_back(node);
         }
 
+        max_id = config.node_num - 1; // 初始化最大ID
         _set_target_formation();
         _set_initial_position();
 
@@ -136,12 +154,19 @@ namespace seven {
         config.trans_formation = cmd;
         _set_target_formation();
         is_transition = true;
-        //transition_data.clear();
-        //printf("\n✅ 切换队形：%s → %s，开始记录...\n", last_formation.c_str(), new_form.c_str());
     }
 
+    // ====================== 【新增】设置目标队形（过滤脱离节点） ======================
     void UUVFormationSimulator::_set_target_formation() {
-        int slave_count = static_cast<int>(nodes.size()) - 1;
+        // 过滤掉主节点和正在脱离的节点
+        std::vector<UUVNode*> valid_slaves;
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            if (!nodes[i].is_leaving) {
+                valid_slaves.push_back(&nodes[i]);
+            }
+        }
+
+        int slave_count = static_cast<int>(valid_slaves.size());
         if (slave_count <= 0) {
             return;
         }
@@ -149,16 +174,39 @@ namespace seven {
         auto positions = _generate_formation_positions(slave_count);
         for (int i = 0; i < slave_count; ++i) {
             if (i < static_cast<int>(positions.size())) {
-                nodes[i + 1].target_x = positions[i].first;
-                nodes[i + 1].target_y = positions[i].second;
+                valid_slaves[i]->target_x = positions[i].first;
+                valid_slaves[i]->target_y = positions[i].second;
             }
         }
     }
 
+    // ====================== 【修改】队形过渡（处理加入节点） ======================
     void UUVFormationSimulator::_transition_formation() {
         for (size_t i = 1; i < nodes.size(); ++i) {
-            nodes[i].rel_x += (nodes[i].target_x - nodes[i].rel_x) * TRANSITION_SPEED;
-            nodes[i].rel_y += (nodes[i].target_y - nodes[i].rel_y) * TRANSITION_SPEED;
+            UUVNode& node = nodes[i];
+
+            if (node.is_joining) {
+                node.join_progress = std::min(1.0, node.join_progress + 1.0 / node.join_total_frames);
+                node.rel_x += (node.target_x - node.rel_x) * 0.1;
+                node.rel_y += (node.target_y - node.rel_y) * 0.1;
+
+                if (node.join_progress >= 1.0) {
+                    node.is_joining = false;
+                    printf("✅ 节点 ID:%d 已完全加入编队\n", node.id);
+                }
+            }
+            // ====================== 【脱离节点也参与移动】 ======================
+            else {
+                if (node.is_leaving) {
+                    // 慢速移动到脱离目标
+                    node.rel_x += (node.target_x - node.rel_x) * TRANSITION_SPEED * 0.6;
+                    node.rel_y += (node.target_y - node.rel_y) * TRANSITION_SPEED * 0.6;
+                }
+                else {
+                    node.rel_x += (node.target_x - node.rel_x) * TRANSITION_SPEED;
+                    node.rel_y += (node.target_y - node.rel_y) * TRANSITION_SPEED;
+                }
+            }
         }
     }
 
@@ -243,86 +291,10 @@ namespace seven {
         }
     }
 
-    //void UUVFormationSimulator::_record_transition_step(Json::Value& trajectory_result) {
-    //    std::lock_guard<std::mutex> lock(sim_mutex);
-    //    if (!is_transition) {
-    //        return;
-    //    }
-
-    //    Json::Value step_data;
-    //    step_data["sim_time"] = std::round(current_time * 1000) / 1000;
-    //    //step_data["from_formation"] = last_formation;
-    //    step_data["to_formation"] = static_cast<int>(config.current_formation);
-
-    //    Json::Value nodes_json(Json::arrayValue);
-    //    double max_error = 0.0;
-    //    for (const auto& node : nodes) {
-    //        double err = _calculate_formation_error(node);
-    //        max_error = std::max(max_error, err);
-
-    //        Json::Value node_json;
-    //        node_json["id"] = node.id;
-    //        node_json["lon"] = std::round(node.lon * 1e6) / 1e6;
-    //        node_json["lat"] = std::round(node.lat * 1e6) / 1e6;
-    //        node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
-    //        node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
-    //        node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
-    //        node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
-    //        node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
-    //        node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
-    //        node_json["formation_error"] = std::round(err * 1e4) / 1e4;
-
-    //        nodes_json.append(node_json);
-    //    }
-
-    //    step_data["nodes"] = nodes_json;
-
-    //    trajectory_result["frames"] = Json::Value(Json::arrayValue);
-
-    //    // 4.1 构建单个帧对象
-    //    Json::Value frame_obj;
-    //    frame_obj["frame_id"] = frame_id;
-
-    //    double err = _calculate_formation_error(node);
-    //    max_error = std::max(max_error, err);
-    //    // 4.2 构建该帧下的nodes数组
-    //    Json::Value nodes(Json::arrayValue);
-    //    for (const auto& node : nodes) {
-    //        // 构建单个节点对象
-    //        Json::Value node_obj;
-    //        node_obj["node_id"] = uav_data.uav_id;
-    //        node_obj["pos_x"] = uav_data.position.x; // 节点挂载pos对象
-    //        node_obj["pos_y"] = uav_data.position.y;
-
-    //        nodes.append(node_obj); // 节点加入该帧的nodes数组
-    //    }
-
-    //    // 4.3 帧对象挂载nodes数组
-    //    frame_obj["nodes"] = nodes;
-
-    //    // 4.4 帧对象加入frames数组
-    //    trajectory_result["frames"].append(frame_obj);
-    //    
-    //    //transition_data.push_back(step_data);
-
-    //    // 检测是否达到稳定状态
-    //    //if (max_error < ERROR_STABLE_THRESHOLD) {
-    //    //    is_transition = false;
-    //    //    // 写入JSON文件
-
-    //    //    /*std::ofstream f("trans.json");
-    //    //    if (f.is_open()) {
-    //    //        f << std::setw(2) << transition_data << std::endl;
-    //    //        f.close();
-    //    //        printf("✅ 变换完成！共 %zu 步，已写入 trans.json\n", transition_data.size());
-    //    //    }*/
-    //    //}
-    //}
-
     std::vector<std::pair<double, double>> UUVFormationSimulator::_generate_formation_positions(int cnt) {
         std::vector<std::pair<double, double>> positions;
-        if (cnt < 3 || cnt > 9) {
-            throw std::invalid_argument("从节点数量必须在3~9之间，当前值：" + std::to_string(cnt));
+        if (cnt < 1 || cnt > 9) {
+            throw std::invalid_argument("从节点数量必须在1~9之间，当前值：" + std::to_string(cnt));
         }
 
         double d = config.rel_distance;
@@ -334,22 +306,30 @@ namespace seven {
             }
         }
         else if (f == Formation_Type::Rectangle) {
-            std::map<int, std::pair<int, int>> m = {
-                {3, {2,2}}, {4, {2,2}}, {5, {2,3}}, {6, {2,3}},
-                {7, {3,3}}, {8, {3,3}}, {9, {3,3}}
-            };
-            int rows = m[cnt].first;
-            int cols = m[cnt].second;
-            double ox = -(cols - 1) * d / 2;
-            double oy = -d;
-            int idx = 0;
-
-            for (int i = 0; i < rows && idx < cnt; ++i) {
-                double y = oy - i * d;
-                for (int j = 0; j < cols && idx < cnt; ++j) {
-                    positions.emplace_back(ox + j * d, y);
-                    idx++;
-                }
+            if (cnt < 3) {
+                throw std::invalid_argument("矩形队形，从节点数量必须在3~9之间，当前值：" + std::to_string(cnt));
+            }
+            int num = cnt + 1;
+            if (num == 4) {
+                positions = { {d, 0}, {d, -d}, {0, -d} };
+            }
+            else if (num == 5) {
+                positions = { {-d, d}, {-d, -d}, {d, d}, {d, -d} };
+            }
+            else if (num == 6) {
+                positions = { {-d, 0}, {d, 0}, {-d, -d}, {0, -d}, {d, -d} };
+            }
+            else if (num == 7) {
+                positions = { {-d, 0}, {d, 0}, {0, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d} };
+            }
+            else if (num == 8) {
+                positions = { {-d, 0}, {d, 0}, {-d, -d}, {d, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d} };
+            }
+            else if (num == 9) {
+                positions = { {-d, 0}, {d, 0}, {-d, -d}, {0, -d}, {d, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d} };
+            }
+            else if (num == 10) {
+                positions = { {-2 * d,0}, {-d,0}, {d,0}, {2 * d,0}, {-2 * d,-d}, {-d,-d}, {0,-d}, {d,-d}, {2 * d,-d} };
             }
         }
         else if (f == Formation_Type::Circle) {
@@ -360,36 +340,60 @@ namespace seven {
             }
         }
         else if (f == Formation_Type::Diamond) {
-            std::map<int, std::vector<int>> m = {
-                {3, {2,1}}, {4, {2,2}}, {5, {2,2,1}}, {6, {2,2,2}},
-                {7, {2,3,2}}, {8, {2,4,2}}, {9, {2,4,2,1}}
-            };
-            auto rows = m[cnt];
-            int idx = 0;
-
-            for (size_t i = 0; i < rows.size() && idx < cnt; ++i) {
-                int n = rows[i];
-                double y = -(i + 1) * d;
-                double ox = -(n - 1) * d / 2;
-                for (int j = 0; j < n && idx < cnt; ++j) {
-                    positions.emplace_back(ox + j * d, y);
-                    idx++;
-                }
+            if (cnt < 3) {
+                throw std::invalid_argument("菱形队形，从节点数量必须在3~9之间，当前值：" + std::to_string(cnt));
+            }
+            int num = cnt + 1;
+            if (num == 4) {
+                positions = { {-d, 0}, {0, -d}, {d, 0} };
+            }
+            else if (num == 5) {
+                positions = { {0, d}, {-d, 0}, {d, 0}, {0, -d} };
+            }
+            else if (num == 6) {
+                positions = { {0, d}, {-d, 0}, {d, 0}, {0, -d}, {0, -2*d} };
+            }
+            else if (num == 7) {
+                positions = { {0, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d}, {0, -3 * d}, {0, -4 * d} };
+            }
+            else if (num == 8) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {d, -2 * d}, {-d / 2, -3 * d}, {d / 2, -3 * d}, {0, -4 * d} };
+            }
+            else if (num == 9) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d}, {-d / 2, -3 * d}, {d / 2, -3 * d}, {0, -4 * d} };
+            }
+            else if (num == 10) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-1.5 * d, -2 * d}, {-0.5 * d, -2 * d}, {0.5 * d, -2 * d}, {1.5 * d, -2 * d}, {-d / 2, -3 * d}, {d / 2, -3 * d}, {0, -4 * d} };
             }
         }
         else if (f == Formation_Type::Triangle) {
-            int idx = 0;
-            int current_row = 2;
-            while (idx < cnt) {
-                int nodes_in_current_row = current_row;
-                double y = -(current_row - 1) * d * 1.2;
-                double x_offset = -(nodes_in_current_row - 1) * d / 2.0;
-                for (int col = 0; col < nodes_in_current_row && idx < cnt; ++col) {
-                    double x = x_offset + col * d;
-                    positions.emplace_back(x, y);
-                    idx++;
-                }
-                current_row++;
+            if (cnt < 2) {
+                throw std::invalid_argument("三角形队形，从节点数量必须在2~9之间，当前值：" + std::to_string(cnt));
+            }
+            int num = cnt + 1;
+            if (num == 3) {
+                positions = { {-d, -d}, {d, -d} };
+            }
+            else if (num == 4) {
+                positions = { {0, d}, {-d, -d}, {d, -d} };
+            }
+            else if (num == 5) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {d, -2 * d} };
+            }
+            else if (num == 6) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d} };
+            }
+            else if (num == 7) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-1.5 * d, -2 * d}, {-0.5 * d, -2 * d}, {0.5 * d, -2 * d}, {1.5 * d, -2 * d} };
+            }
+            else if (num == 8) {
+                positions = { {-d, -d}, {0, -d}, {d, -d}, {-1.5 * d, -2 * d}, {-0.5 * d, -2 * d}, {0.5 * d, -2 * d}, {1.5 * d, -2 * d} };
+            }
+            else if (num == 9) {
+                positions = { {-d, -d}, {0, -d}, {d, -d}, {-2 * d, -2 * d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d}, {2 * d, -2 * d} };
+            }
+            else if (num == 10) {
+                positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d}, {-1.5 * d, -3 * d}, {-0.5 * d, -3 * d}, {0.5 * d, -3 * d}, {1.5 * d, -3 * d} };
             }
         }
 
@@ -422,100 +426,261 @@ namespace seven {
         return { lon, lat };
     }
 
+    // ====================== 【修改】更新机动（处理脱离节点） ======================
     void UUVFormationSimulator::_update_maneuver() {
-        //std::lock_guard<std::mutex> lock(sim_mutex);
         UUVNode& main = nodes[0];
         double dt = config.sim_step;
 
-        // 1. 更新主节点
         double current_v_main = config.init_speed + config.acceleration * current_time;
         current_v_main = std::max(0.1, current_v_main);
 
-        // 更新航向（积分航向变化率）
         main.heading = fmod(main.heading + config.heading_rate * dt, 360.0);
-        if (main.heading < 0) {
-            main.heading += 360.0;
-        }
+        if (main.heading < 0) main.heading += 360.0;
         double main_hdg_rad = to_radians(main.heading);
         main.speed = current_v_main;
 
-        // 主节点位移增量
-        double dx_main_global = current_v_main * std::sin(main_hdg_rad) * dt;
-        double dy_main_global = current_v_main * std::cos(main_hdg_rad) * dt;
-        auto [new_lon, new_lat] = _enu2geo(dx_main_global, dy_main_global, main.pos_.lon_deg, main.pos_.lat_deg);
+        double dx_main = current_v_main * std::sin(main_hdg_rad) * dt;
+        double dy_main = current_v_main * std::cos(main_hdg_rad) * dt;
+        auto [new_lon, new_lat] = _enu2geo(dx_main, dy_main, main.pos_.lon_deg, main.pos_.lat_deg);
         main.pos_.lon_deg = new_lon;
         main.pos_.lat_deg = new_lat;
 
-        // 2. 队形过渡 + 避碰
         _transition_formation();
         apply_collision_avoidance();
+        double w = to_radians(config.heading_rate);
 
-        // 3. 更新从节点
-        for (size_t i = 1; i < nodes.size(); ++i) {
+        std::vector<size_t> indices_to_remove;
+
+        // ====================== 逆序遍历（和Python一致） ======================
+        for (int i = nodes.size() - 1; i >= 1; --i) {
             UUVNode& node = nodes[i];
 
-            // 3.1 相对速度
-            double v_rel_x = (node.rel_x - node.last_rel_x) / dt;
-            double v_rel_y = (node.rel_y - node.last_rel_y) / dt;
+            if (node.is_leaving) {
+                // ====================== 找最近节点 ======================
+                UUVNode* closest_node = nullptr;
+                double min_dist = 1e9;
 
-            // 3.2 坐标旋转
-            double v_rel_x_g = v_rel_x * std::cos(main_hdg_rad) - v_rel_y * std::sin(main_hdg_rad);
-            double v_rel_y_g = v_rel_x * std::sin(main_hdg_rad) + v_rel_y * std::cos(main_hdg_rad);
+                for (size_t j = 1; j < nodes.size(); ++j) {
+                    UUVNode& n = nodes[j];
+                    if (n.is_leaving) continue;
 
-            // 3.3 速度合成
-            double v_main_x_g = current_v_main * std::sin(main_hdg_rad);
-            double v_main_y_g = current_v_main * std::cos(main_hdg_rad);
-            double v_abs_x = v_main_x_g + v_rel_x_g;
-            double v_abs_y = v_main_y_g + v_rel_y_g;
+                    double dx = n.rel_x - node.rel_x;
+                    double dy = n.rel_y - node.rel_y;
+                    double d = std::hypot(dx, dy);
+                    if (d < min_dist) {
+                        min_dist = d;
+                        closest_node = &n;
+                    }
+                }
 
-            // 3.4 期望航速和航向
-            double desired_speed = std::hypot(v_abs_x, v_abs_y);
-            double desired_heading_rad = std::atan2(v_abs_x, v_abs_y);
-            double desired_heading = to_degrees(desired_heading_rad);
-            desired_heading = fmod(desired_heading, 360.0);
-            if (desired_heading < 0) {
-                desired_heading += 360.0;
+                // ====================== 距离超过 5倍间隔 → 删除 ======================
+                if (closest_node != nullptr) {
+                    double current_dist = std::hypot(closest_node->rel_x - node.rel_x,
+                        closest_node->rel_y - node.rel_y);
+                    double delete_dist = 5 * config.rel_distance;
+
+                    printf("脱离节点ID:%d → 最近节点:%d | 距离:%.1f / 阈值:%.1f\n",
+                        node.id, closest_node->id, current_dist, delete_dist);
+
+                    if (current_dist > delete_dist) {
+                        printf("✅ 节点 ID:%d 已远离编队，消失\n", node.id);
+                        indices_to_remove.push_back(i);
+                    }
+                }
+
+                // ====================== 经纬度更新（和普通节点完全一样） ======================
+                double rx = node.rel_x;
+                double ry = node.rel_y;
+                double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
+                double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+                auto [lon, lat] = _enu2geo(wx, wy, main.pos_.lon_deg, main.pos_.lat_deg);
+                node.pos_.lon_deg = lon;
+                node.pos_.lat_deg = lat;
+
+                continue;
             }
 
-            // 3.5 物理约束
+            // ====================== 普通节点 ======================
+            double rx = node.rel_x;
+            double ry = node.rel_y;
+            double des_vx, des_vy;
+
+            if (std::fabs(w) < 1e-4) {
+                des_vx = current_v_main * std::sin(main_hdg_rad);
+                des_vy = current_v_main * std::cos(main_hdg_rad);
+            }
+            else {
+                double v_rel_x = -w * ry;
+                double v_rel_y = w * rx;
+                des_vx = current_v_main * std::sin(main_hdg_rad) + v_rel_x;
+                des_vy = current_v_main * std::cos(main_hdg_rad) + v_rel_y;
+            }
+
+            double desired_speed = std::hypot(des_vx, des_vy);
             desired_speed = std::min(desired_speed, MAX_SPEED);
-
-            double heading_diff = desired_heading - node.heading;
-            heading_diff = fmod(heading_diff + 180.0, 360.0) - 180.0;
-
-            double max_turn_this_step = MAX_TURN_RATE * dt;
-            if (std::fabs(heading_diff) > max_turn_this_step) {
-                desired_heading = node.heading + (heading_diff > 0 ? max_turn_this_step : -max_turn_this_step);
-            }
-
-            // 3.6 更新节点状态
             node.speed = desired_speed;
-            node.heading = fmod(desired_heading, 360.0);
-            if (node.heading < 0) {
-                node.heading += 360.0;
+
+            double hdg = std::atan2(des_vx, des_vy);
+            hdg = to_degrees(hdg);
+            hdg = fmod(hdg, 360.0);
+            if (hdg < 0) hdg += 360.0;
+            node.heading = hdg;
+
+            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
+            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+            auto [lon, lat] = _enu2geo(wx, wy, main.pos_.lon_deg, main.pos_.lat_deg);
+            node.pos_.lon_deg = lon;
+            node.pos_.lat_deg = lat;
+        }
+
+        // 批量删除
+        if (!indices_to_remove.empty()) {
+            std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
+            for (size_t idx : indices_to_remove) {
+                nodes.erase(nodes.begin() + idx);
+            }
+            config.node_num = nodes.size();
+            _set_target_formation();
+        }
+    }
+
+    // ====================== 【新增】编队稳定判断 ======================
+    void UUVFormationSimulator::_record_transition_step() {
+        // 没有在过渡，直接返回
+        if (!is_transition) {
+            return;
+        }
+
+        // 如果有节点正在加入编队 → 不判断稳定
+        bool any_joining = false;
+        for (const auto& n : nodes) {
+            if (n.is_joining) {
+                any_joining = true;
+                break;
+            }
+        }
+        if (any_joining) {
+            return;
+        }
+
+        // 计算最大队形误差（跳过：主节点、脱离节点、加入节点）
+        double max_err = 0.0;
+        for (const auto& n : nodes) {
+            if (n.id == 0 || n.is_leaving || n.is_joining) {
+                continue;
+            }
+            double err = std::hypot(n.rel_x - n.target_x, n.rel_y - n.target_y);
+            if (err > max_err) {
+                max_err = err;
+            }
+        }
+
+        // 误差小于阈值 → 视为稳定
+        if (max_err < ERROR_STABLE_THRESHOLD) {
+            // 如果还有节点在脱离 → 不结束过渡
+            bool has_leaving = false;
+            for (const auto& n : nodes) {
+                if (n.is_leaving) {
+                    has_leaving = true;
+                    break;
+                }
             }
 
-            // 3.7 更新地理坐标
-            double rx = node.rel_x * std::cos(main_hdg_rad) - node.rel_y * std::sin(main_hdg_rad);
-            double ry = node.rel_x * std::sin(main_hdg_rad) + node.rel_y * std::cos(main_hdg_rad);
-            auto [node_lon, node_lat] = _enu2geo(rx, ry, main.pos_.lon_deg, main.pos_.lat_deg);
-            node.pos_.lon_deg = node_lon;
-            node.pos_.lat_deg = node_lat;
-
-            // 3.8 保存上一帧相对位置
-            node.last_rel_x = node.rel_x;
-            node.last_rel_y = node.rel_y;
+            if (!has_leaving) {
+                is_transition = false;
+                printf("✅ 编队已稳定\n");
+            }
         }
+    }
+
+    // ====================== 【新增】添加节点 ======================
+    void UUVFormationSimulator::add_node(double lon, double lat, double speed, double heading, int join_frames) {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+        if (nodes.size() >= 10) {
+            printf("❌ 已达到最大节点数10个，无法添加\n");
+            return;
+        }
+
+        max_id += 1;
+        UUVNode& main = nodes[0];
+
+        // 计算新节点相对于主节点的初始位置
+        auto [rel_x, rel_y] = _geo2enu(lon, lat, main.pos_.lon_deg, main.pos_.lat_deg);
+
+        // 创建新节点
+        UUVNode new_node;
+        new_node.id = max_id;
+        new_node.pos_.lon_deg = lon;
+        new_node.pos_.lat_deg = lat;
+        new_node.speed = speed;
+        new_node.heading = heading;
+        new_node.rel_x = rel_x;
+        new_node.rel_y = rel_y;
+        new_node.last_rel_x = rel_x;
+        new_node.last_rel_y = rel_y;
+        new_node.is_joining = true;
+        new_node.join_progress = 0.0;
+        new_node.join_total_frames = join_frames;
+        new_node.is_leaving = false;
+
+        nodes.push_back(new_node);
+        config.node_num = static_cast<int>(nodes.size());
+
+        _set_target_formation();
+        is_transition = true;
+
+        printf("\n✅ 成功添加节点 ID:%d\n", max_id);
+        printf("   所有节点正在重排为 %zu 节点队形...\n", nodes.size());
+    }
+
+    // ====================== 删除末尾节点(改变脱离方向) ======================
+    void UUVFormationSimulator::remove_last_node() {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+        if (nodes.size() <= 2) {
+            printf("❌ 节点数过少，无法删除\n");
+            return;
+        }
+
+        UUVNode* leave_node = nullptr;
+        for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
+            if (it->id != 0 && !it->is_leaving) {
+                leave_node = &(*it);
+                break;
+            }
+        }
+
+        if (!leave_node) {
+            printf("❌ 没有可删除的节点\n");
+            return;
+        }
+
+        leave_node->is_leaving = true;
+        UUVNode& main = nodes[0];
+
+        // ====================== 【修改为Python逻辑】 ======================
+        double opposite_heading = fmod(main.heading + 90.0, 360.0);  //  改成 +90°
+        if (opposite_heading < 0) opposite_heading += 360.0;
+        double opposite_rad = to_radians(opposite_heading);
+
+        double leave_dist = config.rel_distance * 15.0;  //  15倍距离
+        leave_node->leave_target_x = leave_dist * std::sin(opposite_rad);
+        leave_node->leave_target_y = leave_dist * std::cos(opposite_rad);
+
+        _set_target_formation();
+        is_transition = true;
+
+        printf("\n✅ 节点 ID:%d 开始脱离\n", leave_node->id);
+        printf("   脱离目标相对位置: (%.1f, %.1f)\n", leave_node->leave_target_x, leave_node->leave_target_y);
     }
 
     UAVTrajectory& UUVFormationSimulator::step_simulation() {
         std::lock_guard<std::mutex> lock(sim_mutex);
         trajectory_.clearAllTrajectory();
-        for (double cnt = 0; cnt < (config.return_frames/10); cnt += config.sim_step) {
+        for (double cnt = 0; cnt < (config.return_frames / 10); cnt += config.sim_step) {
             current_time += config.sim_step;
             _update_maneuver();
+            _record_transition_step();
             trajectory_.addFrame((current_time * 10), config.current_formation, nodes);
-            //_record_transition_step();
         }
         return trajectory_;
     }
@@ -527,7 +692,7 @@ namespace seven {
     }
 
     double UUVFormationSimulator::_calculate_formation_error(const UUVNode& node) {
-        if (node.id == 0) {
+        if (node.id == 0 || node.is_leaving || node.is_joining) {
             return 0.0;
         }
         return std::hypot(node.rel_x - node.target_x, node.rel_y - node.target_y);
@@ -535,7 +700,6 @@ namespace seven {
 
     void UUVFormationSimulator::InitialParams(FormationConfig& forparams_)
     {
-        // 初始化位置（默认第一个队形）
         std::lock_guard<std::mutex> lock(sim_mutex);
         config = forparams_;
     }
@@ -550,7 +714,6 @@ namespace seven {
             g_pFormationSimulator = new UUVFormationSimulator(config);
             printf("编队初始化成功！\n");
 
-            //获取初始化队形
             UAVTrajectory& trajectory_data = g_pFormationSimulator->getUAVtrajectory();
 
             auto all_trajectory = trajectory_data.getAllTrajectory();
@@ -558,23 +721,20 @@ namespace seven {
 
             trajectory_result["frames"] = Json::Value(Json::arrayValue);
 
-            // 3. 遍历分组，构建每个帧的层级
             for (const auto& group : all_trajectory) {
-                int frame_id = group.frame;                // 帧号
-                const auto& frame_nodes = group.nodes_;    // 该帧下的所有节点
+                int frame_id = group.frame;
+                const auto& frame_nodes = group.nodes_;
 
-                // 4.1 构建单个帧对象
                 Json::Value frame_obj;
                 frame_obj["frame_id"] = frame_id;
                 frame_obj["formation_type"] = static_cast<int>(group.formation);
 
-                // 4.2 构建该帧下的nodes数组
                 Json::Value nodes(Json::arrayValue);
                 double max_error = 0.0;
                 for (const auto& node : frame_nodes) {
                     double err = g_pFormationSimulator->_calculate_formation_error(node);
                     max_error = std::max(max_error, err);
-                    // 构建单个节点对象
+
                     Json::Value node_json;
                     node_json["node_id"] = node.id;
                     node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
@@ -586,14 +746,14 @@ namespace seven {
                     node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
                     node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
                     node_json["formation_error"] = std::round(err * 1e4) / 1e4;
+                    // 可选：添加状态字段
+                    // node_json["is_joining"] = node.is_joining;
+                    // node_json["is_leaving"] = node.is_leaving;
 
-                    nodes.append(node_json); // 节点加入该帧的nodes数组
+                    nodes.append(node_json);
                 }
 
-                // 4.3 帧对象挂载nodes数组
                 frame_obj["nodes"] = nodes;
-
-                // 4.4 帧对象加入frames数组
                 trajectory_result["frames"].append(frame_obj);
             }
         }
@@ -606,6 +766,7 @@ namespace seven {
     void SwitchFormation(const Formation_Type& type) {
         if (g_pFormationSimulator == nullptr) {
             printf("仿真器未初始化！\n");
+            return;
         }
         g_pFormationSimulator->switch_formation(type);
     }
@@ -613,95 +774,48 @@ namespace seven {
     void TurnFormation(double heading_rate) {
         if (g_pFormationSimulator == nullptr) {
             printf("仿真器未初始化！\n");
+            return;
         }
         g_pFormationSimulator->set_heading_rate(heading_rate);
     }
 
-    //void Transformation_Use(CalcTempParam& task_param) {
-    //    if (g_pFormationSimulator == nullptr) {
-    //        printf("仿真器未初始化！\n");
-    //    }
-    //    UAVTrajectory trajectory_data = g_pFormationSimulator->step_simulation();
-    //    // 2. 清空并写入航迹点数组（核心：对接欺骗式干扰的结果字段）
-    //    task_param.trajectory_result.clear(); // 可选，复用对象时建议保留
+    // ====================== 【新增】外部接口：添加节点 ======================
+    void AddNode(double lon, double lat, double speed, double heading, int join_frames) {
+        if (g_pFormationSimulator == nullptr) {
+            printf("仿真器未初始化！\n");
+            return;
+        }
+        g_pFormationSimulator->add_node(lon, lat, speed, heading, join_frames);
+    }
 
-    //    //运行帧数计算
-    //    task_param.run_frames = g_pFormationSimulator->getRunframe() * 10;
-
-    //    auto all_trajectory = trajectory_data.getAllTrajectory();
-    //    if (all_trajectory.empty()) return;
-
-    //    //Json::Value frame_nodes = Json::arrayValue;
-    //    //frame_nodes = task_param.trajectory_result["frames"];
-
-    //    // 3. 遍历分组，构建每个帧的层级
-    //    for (const auto& group : all_trajectory) {
-    //        int frame_id = group.frame;                // 帧号
-    //        const auto& frame_nodes = group.nodes_;    // 该帧下的所有节点
-
-    //        // 4.1 构建单个帧对象
-    //        Json::Value frame_obj;
-    //        frame_obj["frame_id"] = frame_id;
-
-    //        // 4.2 构建该帧下的nodes数组
-    //        Json::Value& nodes = frame_obj["nodes"];
-    //        double max_error = 0.0;
-    //        for (const auto& node : frame_nodes) {
-    //            double err = g_pFormationSimulator->_calculate_formation_error(node);
-    //            max_error = std::max(max_error, err);
-    //            // 构建单个节点对象
-    //            Json::Value node_json;
-    //            node_json["node_id"] = node.id;
-    //            node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
-    //            node_json["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
-    //            node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
-    //            node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
-    //            node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
-    //            node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
-    //            node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
-    //            node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
-    //            node_json["formation_error"] = std::round(err * 1e4) / 1e4;
-
-    //            nodes.append(node_json); // 节点加入该帧的nodes数组
-    //        }
-
-    //        // 4.3 帧对象挂载nodes数组
-    //        //frame_obj["nodes"] = nodes;
-    //        //nodes = frame_obj["nodes"];
-
-    //        // 4.4 帧对象加入frames数组
-    //        task_param.trajectory_result.append(frame_obj);
-    //    }
-    //}
+    // ====================== 【新增】外部接口：删除节点 ======================
+    void RemoveLastNode() {
+        if (g_pFormationSimulator == nullptr) {
+            printf("仿真器未初始化！\n");
+            return;
+        }
+        g_pFormationSimulator->remove_last_node();
+    }
 
     void Transformation_Use(CalcTempParam& task_param) {
         if (g_pFormationSimulator == nullptr) {
             printf("仿真器未初始化！\n");
-            return; // 必须return，否则崩溃
+            return;
         }
 
-        // 获取轨迹数据
         UAVTrajectory trajectory_data = g_pFormationSimulator->step_simulation();
         auto all_trajectory = trajectory_data.getAllTrajectory();
 
-        // 清空输出
         task_param.trajectory_result.clear();
-
-        // ======================
-        // 【关键修复1】手动创建 "frames" 数组
-        // ======================
         Json::Value frames_array(Json::arrayValue);
 
-        // 运行帧数
         task_param.run_frames = g_pFormationSimulator->getRunframe() * 10;
 
         if (all_trajectory.empty()) {
-            // 空的也要把结构写对，防止输出NULL
             task_param.trajectory_result["frames"] = frames_array;
             return;
         }
 
-        // 遍历每一帧
         for (const auto& group : all_trajectory) {
             int frame_id = group.frame;
             const auto& frame_nodes = group.nodes_;
@@ -710,7 +824,7 @@ namespace seven {
             frame_obj["frame_id"] = frame_id;
             frame_obj["formation_type"] = static_cast<int>(group.formation);
 
-            Json::Value nodes_array(Json::arrayValue); // 节点数组
+            Json::Value nodes_array(Json::arrayValue);
 
             for (const auto& node : frame_nodes) {
                 double err = g_pFormationSimulator->_calculate_formation_error(node);
@@ -730,33 +844,18 @@ namespace seven {
                 nodes_array.append(node_json);
             }
 
-            // 把节点数组放入当前帧
             frame_obj["nodes"] = nodes_array;
-
-            // ======================
-            // 【关键修复2】加入 frames 数组
-            // ======================
             frames_array.append(frame_obj);
         }
 
-        // ======================
-        // 【关键修复3】最终绑定到 trajectory_result["frames"]
-        // ======================
         task_param.trajectory_result["frames"] = frames_array;
     }
 
-
-    /**
-    * @brief 添加单帧轨迹数据
-    */
     void UAVTrajectory::addFrame(int frame, const Formation_Type formation, const vector<UUVNode>& nodes)
     {
         trajectory_data.push_back({ frame, formation, nodes });
     }
 
-    /**
-     * @brief 记录队形变换帧数
-     */
     void UAVTrajectory::addFormationChangeFrame(int frame) {
         formation_change_frames.push_back(frame);
     }
@@ -766,16 +865,10 @@ namespace seven {
         trajectory_data.clear();
     }
 
-    /**
-     * @brief 获取所有轨迹数据
-     */
     const std::vector<TrajectoryFrame>& UAVTrajectory::getAllTrajectory() const {
         return trajectory_data;
     }
 
-    /**
-     * @brief 获取队形变换帧数记录
-     */
     const std::vector<int>& UAVTrajectory::getFormationChangeFrames() const {
         return formation_change_frames;
     }
