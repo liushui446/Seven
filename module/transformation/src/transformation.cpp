@@ -455,8 +455,9 @@ namespace seven {
         main.pos_.lon_deg = new_lon;
         main.pos_.lat_deg = new_lat;
 
-
-        _transition_formation();
+        if (is_transition) {
+            _transition_formation();
+        }
         apply_collision_avoidance();
         double w = to_radians(config.heading_rate);
 
