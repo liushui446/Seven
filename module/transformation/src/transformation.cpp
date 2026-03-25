@@ -178,6 +178,16 @@ namespace seven {
                 valid_slaves[i]->target_y = positions[i].second;
             }
         }
+
+        // 给所有正在脱离的节点单独设置目标点 = leave_target_x / leave_target_y
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            UUVNode& node = nodes[i];
+            if (node.is_leaving) {
+                node.target_x = node.leave_target_x;
+                node.target_y = node.leave_target_y;
+                printf("脱离点消失位置更新为：%.1f, %.1f\n", node.target_x, node.target_y);
+            }
+        }
     }
 
     // ====================== 【修改】队形过渡（处理加入节点） ======================
@@ -250,7 +260,7 @@ namespace seven {
 
                 Point2D diff = adjusted[i] - adjusted[j];
                 Point2D dir_vec = diff.normalized();
-                double adj = std::min((COLLISION_RADIUS * 2 - dis) / 2, MAX_ADJUST_STEP);
+                double adj = std::min((config.collision_radius * 2 - dis) / 2, MAX_ADJUST_STEP);
 
                 if (i == 0) {
                     adjusted[j] = adjusted[j] - dir_vec * adj;
@@ -444,6 +454,7 @@ namespace seven {
         auto [new_lon, new_lat] = _enu2geo(dx_main, dy_main, main.pos_.lon_deg, main.pos_.lat_deg);
         main.pos_.lon_deg = new_lon;
         main.pos_.lat_deg = new_lat;
+
 
         _transition_formation();
         apply_collision_avoidance();
