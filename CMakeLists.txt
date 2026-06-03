@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 project(seven)
 IF (WIN32)
- ADD_DEFINITIONS(-D Windows)
+ # _WIN32 is built-in on MSVC, no need to define manually
 ELSEIF (UNIX)
  ADD_DEFINITIONS(-D Linux)
 ENDIF ()

@@ -22,7 +22,7 @@
 #include <thread>
 #include <iomanip>
 
-# if (defined Windows)
+# if (defined _WIN32)
 #   define SEVEN_EXPORTS __declspec(dllexport)
 # elif defined Linux
 #   define SEVEN_EXPORTS __attribute__ ((visibility ("default")))
@@ -319,6 +319,10 @@ namespace seven
         std::atomic<int> run_frames;			 // 每次运行帧数
         std::atomic<int> return_frames;			 // 每次运行帧数
         vector<InputPlatParam> serveral_plat;
+        // 导出配置（Phase 2 新增）
+        std::string export_format;               // 导出格式: "json", "binary", "" (不导出)
+        std::string export_filename;             // 导出文件路径
+        bool export_enabled = false;             // 是否启用导出
     };
 
     // UUV节点结构体（对应Python的UUVNode）

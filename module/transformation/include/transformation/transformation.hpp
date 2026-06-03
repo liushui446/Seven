@@ -3,6 +3,13 @@
 
 #include "core/CommonCore.hpp"
 
+// transformation 模块导出宏
+#ifdef TRANSFORMATION_EXPORTS_DLL
+#   define TRANSFORMATION_EXPORTS __declspec(dllexport)
+#else
+#   define TRANSFORMATION_EXPORTS __declspec(dllimport)
+#endif
+
 namespace seven{
 
     // 全局常量定义
@@ -20,15 +27,17 @@ namespace seven{
     struct FormationConfig;
     class UUVFormationSimulator;
 
-    string formationToStr(Formation_Type type);
+    TRANSFORMATION_EXPORTS string formationToStr(Formation_Type type);
 
     /**
     * @brief 轨迹存储类
     */
-    class UAVTrajectory {
+    class TRANSFORMATION_EXPORTS UAVTrajectory {
     private:
         std::vector<TrajectoryFrame> trajectory_data;  // 所有轨迹数据
         std::vector<int> formation_change_frames;      // 队形变换帧数记录
+        FormationConfig config_snapshot;               // 仿真配置快照
+        double simulation_end_time;                    // 总仿真时长
 
     public:
         /**
@@ -55,10 +64,43 @@ namespace seven{
          * @brief 获取队形变换帧数记录
          */
         const std::vector<int>& getFormationChangeFrames() const;
+
+        /**
+         * @brief 设置配置快照和仿真时长
+         */
+        void setMetadata(const FormationConfig& cfg, double sim_time) {
+            config_snapshot = cfg;
+            simulation_end_time = sim_time;
+        }
+
+        /**
+         * @brief 获取配置快照
+         */
+        const FormationConfig& getConfigSnapshot() const { return config_snapshot; }
+
+        /**
+         * @brief 获取总仿真时长
+         */
+        double getSimulationTime() const { return simulation_end_time; }
+
+        /**
+         * @brief 获取总帧数
+         */
+        size_t getFrameCount() const { return trajectory_data.size(); }
+
+        /**
+         * @brief 序列化为JSON字符串
+         */
+        std::string serializeToJSON() const;
+
+        /**
+         * @brief 序列化为二进制文件
+         */
+        bool serializeToBinary(const std::string& filename) const;
     };
 
     // UUV编队仿真核心类
-    class UUVFormationSimulator {
+    class TRANSFORMATION_EXPORTS UUVFormationSimulator {
     private:
         FormationConfig config;
         std::vector<UUVNode> nodes;
@@ -112,6 +154,28 @@ namespace seven{
         void set_heading_rate(double rate) { config.heading_rate = rate; }
 
         void InitialParams(FormationConfig& forparams_);
+
+        /**
+         * @brief 导出轨迹数据为JSON字符串
+         */
+        std::string exportTrajectoryJSON() const;
+
+        /**
+         * @brief 导出轨迹数据为二进制文件
+         * @param filename 输出文件路径
+         * @return 是否成功
+         */
+        bool exportTrajectoryBinary(const std::string& filename) const;
+
+        /**
+         * @brief 获取当前仿真状态
+         */
+        Json::Value getSimulationStatus() const;
+
+        /**
+         * @brief 获取当前轨迹数据的详细统计信息
+         */
+        Json::Value getTrajectoryStatistics();
     };
 
     // 外部接口声明（集成到服务端的核心接口）
@@ -130,7 +194,7 @@ namespace seven{
     void SEVEN_EXPORTS RemoveLastNode(int num);
 
     // 全局仿真器实例（服务端单例使用）
-    extern UUVFormationSimulator* g_pFormationSimulator;
+    extern TRANSFORMATION_EXPORTS UUVFormationSimulator* g_pFormationSimulator;
 
 }
 

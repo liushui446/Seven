@@ -1,4 +1,5 @@
 ﻿#include "transformation/transformation.hpp"
+#include "transformation/trajectory_serializer.hpp"
 
 #include <stdexcept>
 #include <algorithm>
@@ -917,6 +918,30 @@ namespace seven {
         }
 
         task_param.trajectory_result["frames"] = frames_array;
+
+        // ===================== Phase 2: 自动导出支持 =====================
+        if (task_param.export_enabled && !task_param.export_format.empty()) {
+            if (task_param.export_format == "json") {
+                std::string json_str = g_pFormationSimulator->exportTrajectoryJSON();
+                if (!task_param.export_filename.empty()) {
+                    std::ofstream file(task_param.export_filename);
+                    file << json_str;
+                    file.close();
+                    printf("✅ 自动导出 JSON: %s (%zu bytes)\n",
+                           task_param.export_filename.c_str(), json_str.size());
+                }
+                task_param.trajectory_result["export_json_size"] = (int)json_str.size();
+            }
+            else if (task_param.export_format == "binary") {
+                std::string filename = task_param.export_filename.empty()
+                    ? "trajectory_auto.traj" : task_param.export_filename;
+                bool ok = g_pFormationSimulator->exportTrajectoryBinary(filename);
+                if (ok) {
+                    task_param.trajectory_result["export_binary_file"] = filename;
+                    printf("✅ 自动导出 Binary: %s\n", filename.c_str());
+                }
+            }
+        }
     }
 
     void UAVTrajectory::addFrame(int frame, const Formation_Type formation, const vector<UUVNode>& nodes)
@@ -939,6 +964,258 @@ namespace seven {
 
     const std::vector<int>& UAVTrajectory::getFormationChangeFrames() const {
         return formation_change_frames;
+    }
+
+    std::string UAVTrajectory::serializeToJSON() const {
+        Json::Value root;
+        
+        // 添加元数据
+        root["metadata"]["simulator_version"] = "1.0";
+        root["metadata"]["simulation_time_s"] = simulation_end_time;
+        root["metadata"]["total_frames"] = static_cast<int>(trajectory_data.size());
+        root["metadata"]["frame_interval_s"] = config_snapshot.sim_step;
+        
+        // 添加配置信息
+        root["metadata"]["formation_config"]["node_num"] = config_snapshot.node_num;
+        root["metadata"]["formation_config"]["rel_distance"] = config_snapshot.rel_distance;
+        root["metadata"]["formation_config"]["collision_radius"] = config_snapshot.collision_radius;
+        root["metadata"]["formation_config"]["init_speed"] = config_snapshot.init_speed;
+        root["metadata"]["formation_config"]["init_heading"] = config_snapshot.init_heading;
+        root["metadata"]["formation_config"]["heading_rate"] = config_snapshot.heading_rate;
+        root["metadata"]["formation_config"]["acceleration"] = config_snapshot.acceleration;
+        root["metadata"]["formation_config"]["main_node_lon"] = config_snapshot.main_node.lon_deg;
+        root["metadata"]["formation_config"]["main_node_lat"] = config_snapshot.main_node.lat_deg;
+
+        // 添加轨迹帧数据
+        Json::Value frames(Json::arrayValue);
+        for (size_t i = 0; i < trajectory_data.size(); ++i) {
+            const auto& frame = trajectory_data[i];
+            Json::Value frame_obj;
+            
+            frame_obj["frame_id"] = frame.frame;
+            frame_obj["timestamp_s"] = frame.frame * config_snapshot.sim_step;
+            frame_obj["formation_type"] = formationToStr(frame.formation);
+            
+            Json::Value nodes(Json::arrayValue);
+            for (const auto& node : frame.nodes_) {
+                Json::Value node_obj;
+                node_obj["node_id"] = node.id;
+                node_obj["type"] = (node.id == 0) ? "leader" : "follower";
+                node_obj["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
+                node_obj["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
+                node_obj["speed_ms"] = std::round(node.speed * 1e3) / 1e3;
+                node_obj["heading_deg"] = std::round(node.heading * 1e3) / 1e3;
+                node_obj["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
+                node_obj["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
+                node_obj["target_x"] = std::round(node.target_x * 1e3) / 1e3;
+                node_obj["target_y"] = std::round(node.target_y * 1e3) / 1e3;
+                
+                // 状态信息
+                Json::Value status;
+                status["is_joining"] = node.is_joining;
+                status["is_leaving"] = node.is_leaving;
+                status["join_progress"] = std::round(node.join_progress * 1000) / 1000;
+                node_obj["status"] = status;
+                
+                nodes.append(node_obj);
+            }
+            frame_obj["nodes"] = nodes;
+            frames.append(frame_obj);
+        }
+        root["frames"] = frames;
+
+        return Json::writeString(Json::StreamWriterBuilder(), root);
+    }
+
+    bool UAVTrajectory::serializeToBinary(const std::string& filename) const {
+        std::ofstream file(filename, std::ios::binary);
+        if (!file.is_open()) {
+            printf("❌ 无法打开文件进行写入：%s\n", filename.c_str());
+            return false;
+        }
+
+        try {
+            // ============ 写入文件头 ============
+            TrajectoryFileHeader header = {};
+            header.magic = 0x54524A46;  // "TRJF"
+            header.version = 0x0100;
+            header.frame_count = static_cast<uint32_t>(trajectory_data.size());
+            
+            // 计算总节点数
+            uint32_t total_nodes = 0;
+            for (const auto& frame : trajectory_data) {
+                total_nodes += frame.nodes_.size();
+            }
+            header.total_nodes = total_nodes;
+            header.simulation_time = simulation_end_time;
+            header.metadata_offset = sizeof(TrajectoryFileHeader);
+            
+            // 先写入头部（先占位）
+            file.write(reinterpret_cast<const char*>(&header), sizeof(TrajectoryFileHeader));
+
+            // ============ 生成并写入元数据 ============
+            Json::Value metadata;
+            metadata["version"] = "1.0";
+            metadata["sim_time"] = simulation_end_time;
+            metadata["config"]["node_num"] = config_snapshot.node_num;
+            metadata["config"]["rel_distance"] = config_snapshot.rel_distance;
+            
+            std::string metadata_str = Json::writeString(Json::StreamWriterBuilder(), metadata);
+            header.metadata_size = static_cast<uint32_t>(metadata_str.size());
+            
+            file.write(metadata_str.c_str(), metadata_str.size());
+
+            // ============ 建立帧索引表 ============
+            header.frame_index_offset = static_cast<uint32_t>(file.tellp());
+            std::vector<uint32_t> frame_offsets;
+            
+            for (size_t i = 0; i < trajectory_data.size(); ++i) {
+                // 先记录当前位置作为帧偏移
+                frame_offsets.push_back(static_cast<uint32_t>(file.tellp()));
+                // 预留空间写入帧偏移（实际在帧数据段后更新）
+                uint32_t placeholder = 0;
+                file.write(reinterpret_cast<const char*>(&placeholder), sizeof(uint32_t));
+            }
+
+            // ============ 写入帧数据 ============
+            header.frame_data_offset = static_cast<uint32_t>(file.tellp());
+            uint32_t current_offset = header.frame_data_offset;
+
+            for (size_t frame_idx = 0; frame_idx < trajectory_data.size(); ++frame_idx) {
+                const auto& frame = trajectory_data[frame_idx];
+                
+                // 更新帧偏移表
+                uint32_t current_pos = static_cast<uint32_t>(file.tellp());
+                file.seekp(header.frame_index_offset + frame_idx * sizeof(uint32_t));
+                file.write(reinterpret_cast<const char*>(&current_pos), sizeof(uint32_t));
+                file.seekp(current_pos);
+
+                // 写入帧头
+                FrameHeader frame_header;
+                frame_header.frame_id = frame.frame;
+                frame_header.timestamp_ms = static_cast<int>(frame.frame * config_snapshot.sim_step * 1000);
+                frame_header.formation_type = static_cast<uint32_t>(frame.formation);
+                frame_header.node_count = static_cast<uint16_t>(frame.nodes_.size());
+                
+                file.write(reinterpret_cast<const char*>(&frame_header), sizeof(FrameHeader));
+
+                // 写入节点数据
+                for (const auto& node : frame.nodes_) {
+                    NodeBinaryData bin_node = {};
+                    bin_node.node_id = node.id;
+                    bin_node.lon_deg = node.pos_.lon_deg;
+                    bin_node.lat_deg = node.pos_.lat_deg;
+                    bin_node.rel_x = node.rel_x;
+                    bin_node.rel_y = node.rel_y;
+                    bin_node.target_x = node.target_x;
+                    bin_node.target_y = node.target_y;
+                    bin_node.speed_ms = node.speed;
+                    bin_node.heading_deg = node.heading;
+                    bin_node.is_joining = node.is_joining ? 1 : 0;
+                    bin_node.is_leaving = node.is_leaving ? 1 : 0;
+                    bin_node.join_progress = static_cast<float>(node.join_progress);
+                    
+                    file.write(reinterpret_cast<const char*>(&bin_node), sizeof(NodeBinaryData));
+                }
+            }
+
+            // ============ 更新文件头并重新写入 ============
+            file.seekp(0);
+            file.write(reinterpret_cast<const char*>(&header), sizeof(TrajectoryFileHeader));
+
+            file.close();
+            printf("✅ 轨迹数据已序列化到二进制文件：%s\n", filename.c_str());
+            printf("   文件大小：%.2f KB，总帧数：%u，总节点数：%u\n", 
+                file.tellp() / 1024.0, header.frame_count, header.total_nodes);
+            return true;
+        }
+        catch (const std::exception& e) {
+            printf("❌ 二进制序列化失败：%s\n", e.what());
+            file.close();
+            return false;
+        }
+    }
+
+    // ====================== UUVFormationSimulator 新增方法实现 ======================
+    std::string UUVFormationSimulator::exportTrajectoryJSON() const {
+        trajectory_.serializeToJSON();
+        return trajectory_.serializeToJSON();
+    }
+
+    bool UUVFormationSimulator::exportTrajectoryBinary(const std::string& filename) const {
+        return trajectory_.serializeToBinary(filename);
+    }
+
+    Json::Value UUVFormationSimulator::getSimulationStatus() const {
+        Json::Value status;
+        
+        status["current_time"] = current_time;
+        status["frame_count"] = static_cast<int>(trajectory_.getFrameCount());
+        status["is_transition"] = is_transition;
+        status["current_formation"] = formationToStr(config.current_formation);
+        status["last_formation"] = formationToStr(last_formation);
+        status["node_count"] = static_cast<int>(nodes.size());
+        status["max_node_id"] = max_id;
+        
+        // 节点详情
+        Json::Value node_details(Json::arrayValue);
+        for (const auto& node : nodes) {
+            Json::Value node_info;
+            node_info["id"] = node.id;
+            node_info["type"] = (node.id == 0) ? "leader" : "follower";
+            node_info["is_joining"] = node.is_joining;
+            node_info["is_leaving"] = node.is_leaving;
+            node_info["speed"] = std::round(node.speed * 1e3) / 1e3;
+            node_details.append(node_info);
+        }
+        status["nodes"] = node_details;
+        
+        return status;
+    }
+
+    Json::Value UUVFormationSimulator::getTrajectoryStatistics() {
+        Json::Value stats;
+        
+        const auto& all_frames = trajectory_.getAllTrajectory();
+        if (all_frames.empty()) {
+            stats["error"] = "no trajectory data";
+            return stats;
+        }
+
+        double total_error = 0.0;
+        double max_error = 0.0;
+        double min_error = 1e9;
+        size_t error_count = 0;
+        
+        double total_avg_speed = 0.0;
+        size_t speed_count = 0;
+
+        for (const auto& frame : all_frames) {
+            for (const auto& node : frame.nodes_) {
+                double err = _calculate_formation_error(node);
+                if (err > 0.0) {
+                    total_error += err;
+                    max_error = std::max(max_error, err);
+                    min_error = std::min(min_error, err);
+                    error_count++;
+                }
+                
+                if (node.speed > 0.0) {
+                    total_avg_speed += node.speed;
+                    speed_count++;
+                }
+            }
+        }
+
+        stats["total_frames"] = static_cast<int>(all_frames.size());
+        stats["total_nodes_recorded"] = error_count;
+        stats["formation_error"]["max"] = std::round(max_error * 1e4) / 1e4;
+        stats["formation_error"]["min"] = (min_error == 1e9) ? 0.0 : std::round(min_error * 1e4) / 1e4;
+        stats["formation_error"]["average"] = (error_count > 0) ? std::round((total_error / error_count) * 1e4) / 1e4 : 0.0;
+        stats["average_speed"] = (speed_count > 0) ? std::round((total_avg_speed / speed_count) * 1e3) / 1e3 : 0.0;
+        stats["simulation_duration_s"] = current_time;
+
+        return stats;
     }
 
 }

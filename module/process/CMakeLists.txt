@@ -33,6 +33,10 @@ target_include_directories(${PROJECT_NAME}
 #("${CMAKE_SOURCE_DIR}/3rdparty/Basler/lib/x64")
 #link_directories("${CMAKE_SOURCE_DIR}/3rdparty/Basler/Runtime/x64")
 
+# 显式添加库搜索路径
+link_directories(${CMAKE_BINARY_DIR}/lib)
+link_directories(${CMAKE_BINARY_DIR}/lib/Release)
+
 # 7. 链接依赖库：增加目标存在性检查（可选但更健壮）
 target_link_libraries(${PROJECT_NAME}
     PUBLIC

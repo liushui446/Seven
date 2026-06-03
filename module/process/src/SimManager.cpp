@@ -5,6 +5,8 @@
 
 #include <thread>
 #include <chrono>
+#include <fstream>
+#include <iomanip>
 // Windows 管道头文件
 #include <windows.h>
 #include <cstring>
@@ -129,7 +131,7 @@ namespace seven {
                     catch (const std::exception& e) {
 
                         calc_thread_ptr->UnInit();
-                        sim_state_ == SimState::ENDDING;
+                        sim_state_ = SimState::ENDDING;
                         result["status"] = "error";
                         result["message"] = std::string("send switch formation command fail: ") + e.what();
                         return -1;
@@ -147,7 +149,7 @@ namespace seven {
                     catch (const std::exception& e) {
 
                         calc_thread_ptr->UnInit();
-                        sim_state_ == SimState::ENDDING;
+                        sim_state_ = SimState::ENDDING;
                         result["status"] = "error";
                         result["message"] = std::string("send turn command fail: ") + e.what();
                         return -1;
@@ -187,7 +189,7 @@ namespace seven {
                     catch (const std::exception& e) {
 
                         calc_thread_ptr->UnInit();
-                        sim_state_ == SimState::ENDDING;
+                        sim_state_ = SimState::ENDDING;
                         result["status"] = "error";
                         result["message"] = std::string("add node command fail: ") + e.what();
                         return -1;
@@ -197,7 +199,7 @@ namespace seven {
                 if (isRemove)
                 {
                     try {
-                        int remove_num = input.get("remove_num", false).asBool();
+                        int remove_num = input.get("remove_num", 1).asInt();
                         calc_thread_ptr->SetRemoveNodeTaskParam(remove_num);
                         result["status"] = "success";
                         result["message_a"] = "send remove node command success!";
@@ -205,12 +207,143 @@ namespace seven {
                     catch (const std::exception& e) {
 
                         calc_thread_ptr->UnInit();
-                        sim_state_ == SimState::ENDDING;
+                        sim_state_ = SimState::ENDDING;
                         result["status"] = "error";
                         result["message"] = std::string("send remove node command fail: ") + e.what();
                         return -1;
                     }
                 }
+
+                // ====================== 【新增】导出轨迹数据命令 ======================
+                bool isExportJSON = input.get("isExportJSON", false).asBool();
+                bool isExportBinary = input.get("isExportBinary", false).asBool();
+                bool isGetStats = input.get("isGetStats", false).asBool();
+                bool isGetStatus = input.get("isGetStatus", false).asBool();
+
+                if (isExportJSON)
+                {
+                    try {
+                        if (g_pFormationSimulator == nullptr) {
+                            result["status"] = "error";
+                            result["message"] = "仿真器未初始化";
+                            return -1;
+                        }
+                        
+                        std::string json_data = g_pFormationSimulator->exportTrajectoryJSON();
+                        
+                        // 可选：保存到文件
+                        std::string export_filename = input.get("export_filename", "").asString();
+                        if (!export_filename.empty()) {
+                            std::ofstream file(export_filename);
+                            file << json_data;
+                            file.close();
+                            result["file_saved"] = export_filename;
+                        }
+                        
+                        result["status"] = "success";
+                        result["message"] = "导出 JSON 成功";
+                        result["data_size_bytes"] = static_cast<int>(json_data.size());
+                        printf("✅ 导出轨迹为 JSON 格式（%zu 字节）\n", json_data.size());
+                    }
+                    catch (const std::exception& e) {
+                        result["status"] = "error";
+                        result["message"] = std::string("导出 JSON 失败: ") + e.what();
+                        printf("❌ 导出 JSON 失败: %s\n", e.what());
+                        return -1;
+                    }
+                }
+
+                if (isExportBinary)
+                {
+                    try {
+                        if (g_pFormationSimulator == nullptr) {
+                            result["status"] = "error";
+                            result["message"] = "仿真器未初始化";
+                            return -1;
+                        }
+                        
+                        std::string export_filename = input.get("export_filename", "trajectory.traj").asString();
+                        bool success = g_pFormationSimulator->exportTrajectoryBinary(export_filename);
+                        
+                        if (success) {
+                            // 获取文件大小
+                            std::ifstream file(export_filename, std::ios::binary | std::ios::ate);
+                            size_t file_size = file.tellg();
+                            file.close();
+                            
+                            result["status"] = "success";
+                            result["message"] = "导出二进制成功";
+                            result["file_path"] = export_filename;
+                            result["file_size_kb"] = std::round(file_size / 1024.0 * 100) / 100;
+                            
+                            // 获取帧数统计
+                            const auto& trajectory = g_pFormationSimulator->getUAVtrajectory();
+                            result["frame_count"] = static_cast<int>(trajectory.getFrameCount());
+                            
+                            printf("✅ 导出轨迹为二进制格式（%.1f KB）\n", file_size / 1024.0);
+                        }
+                        else {
+                            result["status"] = "error";
+                            result["message"] = "导出二进制失败";
+                            return -1;
+                        }
+                    }
+                    catch (const std::exception& e) {
+                        result["status"] = "error";
+                        result["message"] = std::string("导出二进制失败: ") + e.what();
+                        printf("❌ 导出二进制失败: %s\n", e.what());
+                        return -1;
+                    }
+                }
+
+                if (isGetStats)
+                {
+                    try {
+                        if (g_pFormationSimulator == nullptr) {
+                            result["status"] = "error";
+                            result["message"] = "仿真器未初始化";
+                            return -1;
+                        }
+                        
+                        Json::Value stats = g_pFormationSimulator->getTrajectoryStatistics();
+                        result["status"] = "success";
+                        result["message"] = "获取统计信息成功";
+                        result["data"] = stats;
+                        
+                        printf("✅ 获取轨迹统计信息（%d 帧）\n", stats["total_frames"].asInt());
+                    }
+                    catch (const std::exception& e) {
+                        result["status"] = "error";
+                        result["message"] = std::string("获取统计信息失败: ") + e.what();
+                        printf("❌ 获取统计信息失败: %s\n", e.what());
+                        return -1;
+                    }
+                }
+
+                if (isGetStatus)
+                {
+                    try {
+                        if (g_pFormationSimulator == nullptr) {
+                            result["status"] = "error";
+                            result["message"] = "仿真器未初始化";
+                            return -1;
+                        }
+                        
+                        Json::Value status = g_pFormationSimulator->getSimulationStatus();
+                        result["status"] = "success";
+                        result["message"] = "获取仿真状态成功";
+                        result["data"] = status;
+                        
+                        printf("✅ 获取仿真状态（节点数: %d）\n", status["node_count"].asInt());
+                    }
+                    catch (const std::exception& e) {
+                        result["status"] = "error";
+                        result["message"] = std::string("获取仿真状态失败: ") + e.what();
+                        printf("❌ 获取仿真状态失败: %s\n", e.what());
+                        return -1;
+                    }
+                }
+
                 return 0;
             }
         }
