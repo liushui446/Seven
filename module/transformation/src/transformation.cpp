@@ -637,36 +637,44 @@ namespace seven {
     }
 
     // ====================== 【新增】添加节点 ======================
-    void UUVFormationSimulator::add_node(double lon, double lat, double speed, double heading, int join_frames) {
+    void UUVFormationSimulator::add_node(vector<UUVNode>& input) {
         std::lock_guard<std::mutex> lock(sim_mutex);
         if (nodes.size() >= 10) {
             printf("❌ 已达到最大节点数10个，无法添加\n");
             return;
         }
 
+        if (nodes.size()+ input.size() > 10) {
+            printf("❌ 超过最大节点数10个，添加数量过多\n");
+            return;
+        }
+
         max_id += 1;
         UUVNode& main = nodes[0];
 
-        // 计算新节点相对于主节点的初始位置
-        auto [rel_x, rel_y] = _geo2enu(lon, lat, main.pos_.lon_deg, main.pos_.lat_deg);
+        for (int node_index = 0; node_index < input.size(); node_index++) {
+            // 计算新节点相对于主节点的初始位置
+            auto [rel_x, rel_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
 
-        // 创建新节点
-        UUVNode new_node;
-        new_node.id = max_id;
-        new_node.pos_.lon_deg = lon;
-        new_node.pos_.lat_deg = lat;
-        new_node.speed = speed;
-        new_node.heading = heading;
-        new_node.rel_x = rel_x;
-        new_node.rel_y = rel_y;
-        new_node.last_rel_x = rel_x;
-        new_node.last_rel_y = rel_y;
-        new_node.is_joining = true;
-        new_node.join_progress = 0.0;
-        new_node.join_total_frames = join_frames;
-        new_node.is_leaving = false;
+            // 创建新节点
+            UUVNode new_node;
+            new_node.id = max_id;
+            new_node.pos_.lon_deg = input[node_index].pos_.lon_deg;
+            new_node.pos_.lat_deg = input[node_index].pos_.lat_deg;
+            new_node.speed = input[node_index].speed;
+            new_node.heading = input[node_index].heading;
+            new_node.rel_x = rel_x;
+            new_node.rel_y = rel_y;
+            new_node.last_rel_x = rel_x;
+            new_node.last_rel_y = rel_y;
+            new_node.is_joining = true;
+            new_node.join_progress = 0.0;
+            new_node.join_total_frames = input[node_index].join_total_frames;
+            new_node.is_leaving = false;
 
-        nodes.push_back(new_node);
+            nodes.push_back(new_node);
+        }
+        
         config.node_num = static_cast<int>(nodes.size());
 
         _set_target_formation();
@@ -677,37 +685,46 @@ namespace seven {
     }
 
     // ====================== 删除末尾节点(改变脱离方向) ======================
-    void UUVFormationSimulator::remove_last_node() {
+    void UUVFormationSimulator::remove_last_node(int num) {
         std::lock_guard<std::mutex> lock(sim_mutex);
         if (nodes.size() <= 2) {
             printf("❌ 节点数过少，无法删除\n");
             return;
         }
 
-        UUVNode* leave_node = nullptr;
-        for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
-            if (it->id != 0 && !it->is_leaving) {
-                leave_node = &(*it);
-                break;
-            }
-        }
-
-        if (!leave_node) {
-            printf("❌ 没有可删除的节点\n");
+        if ((nodes.size() - num) < 2) {
+            printf("❌ 移除节点数量过多，请减少!\n");
             return;
         }
 
-        leave_node->is_leaving = true;
         UUVNode& main = nodes[0];
+        UUVNode* leave_node = nullptr;
+        while (num--)
+        {
+            leave_node = nullptr;
+            for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
+                if (it->id != 0 && !it->is_leaving) {
+                    leave_node = &(*it);
+                    break;
+                }
+            }
 
-        // ====================== 【修改为Python逻辑】 ======================
-        double opposite_heading = fmod(main.heading + 90.0, 360.0);  //  改成 +90°
-        if (opposite_heading < 0) opposite_heading += 360.0;
-        double opposite_rad = to_radians(opposite_heading);
+            if (!leave_node) {
+                printf("❌ 没有可删除的节点\n");
+                return;
+            }
 
-        double leave_dist = config.rel_distance * 15.0;  //  15倍距离
-        leave_node->leave_target_x = leave_dist * std::sin(opposite_rad);
-        leave_node->leave_target_y = leave_dist * std::cos(opposite_rad);
+            leave_node->is_leaving = true;
+
+            // ====================== 【修改为Python逻辑】 ======================
+            double opposite_heading = fmod(main.heading + 90.0, 360.0);  //  改成 +90°
+            if (opposite_heading < 0) opposite_heading += 360.0;
+            double opposite_rad = to_radians(opposite_heading);
+
+            double leave_dist = config.rel_distance * 15.0;  //  15倍距离
+            leave_node->leave_target_x = leave_dist * std::sin(opposite_rad);
+            leave_node->leave_target_y = leave_dist * std::cos(opposite_rad);
+        }
 
         _set_target_formation();
         is_transition = true;
@@ -823,21 +840,29 @@ namespace seven {
     }
 
     // ====================== 【新增】外部接口：添加节点 ======================
-    void AddNode(double lon, double lat, double speed, double heading, int join_frames) {
+    /*void AddNode(double lon, double lat, double speed, double heading, int join_frames) {
         if (g_pFormationSimulator == nullptr) {
             printf("仿真器未初始化！\n");
             return;
         }
         g_pFormationSimulator->add_node(lon, lat, speed, heading, join_frames);
-    }
+    }*/
 
-    // ====================== 【新增】外部接口：删除节点 ======================
-    void RemoveLastNode() {
+    void AddNode(vector<UUVNode>& input) {
         if (g_pFormationSimulator == nullptr) {
             printf("仿真器未初始化！\n");
             return;
         }
-        g_pFormationSimulator->remove_last_node();
+        g_pFormationSimulator->add_node(input);
+    }
+
+    // ====================== 【新增】外部接口：删除节点 ======================
+    void RemoveLastNode(int num) {
+        if (g_pFormationSimulator == nullptr) {
+            printf("仿真器未初始化！\n");
+            return;
+        }
+        g_pFormationSimulator->remove_last_node(num);
     }
 
     void Transformation_Use(CalcTempParam& task_param) {

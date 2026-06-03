@@ -91,9 +91,9 @@ namespace seven{
         // 队形切换
         void switch_formation(const Formation_Type& cmd);
 
-        void add_node(double lon, double lat, double speed, double heading, int join_frames);
+        void add_node(vector<UUVNode>& input);
 
-        void remove_last_node();
+        void remove_last_node(int num);
 
         // 仿真步进
         UAVTrajectory& step_simulation();
@@ -125,9 +125,9 @@ namespace seven{
 
     void SEVEN_EXPORTS TurnFormation(double heading_rate);
 
-    void SEVEN_EXPORTS AddNode(double lon, double lat, double speed, double heading, int join_frames);
+    void SEVEN_EXPORTS AddNode(vector<UUVNode>& input);
 
-    void SEVEN_EXPORTS RemoveLastNode();
+    void SEVEN_EXPORTS RemoveLastNode(int num);
 
     // 全局仿真器实例（服务端单例使用）
     extern UUVFormationSimulator* g_pFormationSimulator;

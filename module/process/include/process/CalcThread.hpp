@@ -30,8 +30,8 @@ namespace seven
 		void StartWork(bool work);
 		bool SerSwitchTaskParam(Formation_Type input);
 		bool SerTurnTaskParam(double input);
-		bool SetAddNodeTaskParam(UUVNode input);
-		bool SetRemoveNodeTaskParam();
+		bool SetAddNodeTaskParam(vector<UUVNode>& input);
+		bool SetRemoveNodeTaskParam(int num);
 		bool SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output);
 		bool WakeUpAThread(int noThread);
 		bool Interrupted();

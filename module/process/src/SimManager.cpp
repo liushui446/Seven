@@ -157,7 +157,7 @@ namespace seven {
                 if (isAdd)
                 {
                     try {
-                        UUVNode add_node_param;
+                        vector<UUVNode> nodes;
                         // ====================== 解析数组 add_node ======================
                         const Json::Value& nodeArray = input["add_node"];
                         if (nodeArray.isArray())
@@ -165,6 +165,7 @@ namespace seven {
                             //下次加多节点
                             for (int i = 0; i < nodeArray.size(); ++i)
                             {
+                                UUVNode add_node_param;
                                 const Json::Value& node = nodeArray[i];
 
                                 // 节点内部字段
@@ -175,9 +176,11 @@ namespace seven {
                                 // 位置 pos
                                 add_node_param.pos_.lat_deg = node["pos"].get("lat_deg", 0.0).asDouble();
                                 add_node_param.pos_.lon_deg = node["pos"].get("lon_deg", 0.0).asDouble();
+
+                                nodes.push_back(add_node_param);
                             }
                         }
-                        calc_thread_ptr->SetAddNodeTaskParam(add_node_param);
+                        calc_thread_ptr->SetAddNodeTaskParam(nodes);
                         result["status"] = "success";
                         result["message_a"] = "add node command success!";
                     }
@@ -194,7 +197,8 @@ namespace seven {
                 if (isRemove)
                 {
                     try {
-                        calc_thread_ptr->SetRemoveNodeTaskParam();
+                        int remove_num = input.get("remove_num", false).asBool();
+                        calc_thread_ptr->SetRemoveNodeTaskParam(remove_num);
                         result["status"] = "success";
                         result["message_a"] = "send remove node command success!";
                     }
