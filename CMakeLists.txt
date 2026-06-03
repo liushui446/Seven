@@ -35,9 +35,21 @@ if(WIN32)
     )
 endif()
 
+set(GLFW_ROOT ${CMAKE_SOURCE_DIR}/3rdparty/glfw)
+
+# 开启所有源文件编译（自动找到 imgui/*.cpp）
+file(GLOB SRC
+    ${CMAKE_SOURCE_DIR}/3rdparty/imgui/*.cpp
+    ${CMAKE_SOURCE_DIR}/3rdparty/imgui/backends/imgui_impl_glfw.cpp
+    ${CMAKE_SOURCE_DIR}/3rdparty/imgui/backends/imgui_impl_opengl3.cpp
+)
+
 # 3. 添加头文件目录（让项目找到 JsonCpp 的头文件）
 include_directories(
     ${CMAKE_SOURCE_DIR}/3rdparty/jsoncpp/include  # JsonCpp 头文件
+	${CMAKE_SOURCE_DIR}/3rdparty/imgui-1.92.8
+	${CMAKE_SOURCE_DIR}/3rdparty/imgui-1.92.8/backends
+	${GLFW_ROOT}/include
 )
 
 # ===================== 1. 手动指定 Basler SDK 路径 =====================
@@ -50,11 +62,27 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)  # 可执行文件�
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)  # 静态库/导入库输出目录
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)  # 动态库输出目录（Linux/Mac）
 
+# 查找系统依赖（GLFW + OpenGL）
+find_package(OpenGL REQUIRED)
+# find_package(glfw3 REQUIRED)
+# 手动查找GLFW库
+find_library(GLFW_LIB
+    NAMES glfw3 glfw3dll glfw3_mt
+    PATHS ${GLFW_ROOT}/lib-vc2022
+    REQUIRED
+)
+# Windows必须额外依赖系统库
+set(GLFW_EXTRA_LIBS opengl32 gdi32 user32 shell32)
+
 # 复制三方库dll文件
 file(GLOB JSON_DEBUG_FILES ${3DRPARTY_DIR}/jsoncpp/Debug/*)
 file(GLOB JSON_RELEASE_FILES ${3DRPARTY_DIR}/jsoncpp/Release/*)
 file(COPY ${JSON_DEBUG_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug)
 file(COPY ${JSON_RELEASE_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Release)
+
+file(GLOB GLFW3_FILES ${GLFW_ROOT}/lib-vc2022/glfw3.dll)
+file(COPY ${GLFW3_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug)
+file(COPY ${GLFW3_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin/Release)
 
 # Add sub directories
 add_subdirectory(app)

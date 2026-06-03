@@ -14,4 +14,8 @@ target_link_libraries(${PROJECT_NAME}
     sub::core
 	sub::transformation
 	sub::process
+	${OPENGL_LIBRARIES}
+    ${GLFW_LIB}
+    ${GLFW_EXTRA_LIBS}
 )
+
