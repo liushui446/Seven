@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <map>
 #include <vector>
+#include <ppl.h>
 
 using namespace Json;
 
@@ -21,8 +22,8 @@ namespace seven {
     // const double MAX_SPEED = 5.0;
     // const double R_EARTH = 6378137.0;
 
-    // 全局仿真器实例
-    UUVFormationSimulator* g_pFormationSimulator = nullptr;
+    // 多编队仿真器映射表：key = formation_id, value = 仿真器实例
+    std::unordered_map<int, UUVFormationSimulator*> g_FormationSimulators;
 
     string formationToStr(Formation_Type type)
     {
@@ -765,21 +766,41 @@ namespace seven {
     }
 
     // ====================== 外部接口实现 ======================
-    void Init_formation(const FormationConfig& config, Json::Value& trajectory_result) {
-        if (g_pFormationSimulator != nullptr) {
-            delete g_pFormationSimulator;
-            g_pFormationSimulator = nullptr;
-        }
-        try {
-            g_pFormationSimulator = new UUVFormationSimulator(config);
-            printf("编队初始化成功！\n");
 
-            UAVTrajectory& trajectory_data = g_pFormationSimulator->getUAVtrajectory();
+    // 清理所有编队仿真器
+    void Cleanup_All_Formations() {
+        for (auto& pair : g_FormationSimulators) {
+            if (pair.second != nullptr) {
+                delete pair.second;
+                pair.second = nullptr;
+            }
+        }
+        g_FormationSimulators.clear();
+    }
+
+    // 初始化单个编队（兼容旧接口，使用 config 中的 formation_id，默认为 0）
+    void Init_formation(const FormationConfig& config, Json::Value& trajectory_result) {
+        int fid = config.formation_id;
+
+        // 如果该 ID 已存在，先清理旧实例
+        auto it = g_FormationSimulators.find(fid);
+        if (it != g_FormationSimulators.end() && it->second != nullptr) {
+            delete it->second;
+            it->second = nullptr;
+        }
+
+        try {
+            UUVFormationSimulator* sim = new UUVFormationSimulator(config);
+            g_FormationSimulators[fid] = sim;
+            printf("编队 [ID:%d] 初始化成功！\n", fid);
+
+            UAVTrajectory& trajectory_data = sim->getUAVtrajectory();
 
             auto all_trajectory = trajectory_data.getAllTrajectory();
             if (all_trajectory.empty()) return;
 
             trajectory_result["frames"] = Json::Value(Json::arrayValue);
+            trajectory_result["formation_id"] = fid;
 
             for (const auto& group : all_trajectory) {
                 int frame_id = group.frame;
@@ -792,7 +813,7 @@ namespace seven {
                 Json::Value nodes(Json::arrayValue);
                 double max_error = 0.0;
                 for (const auto& node : frame_nodes) {
-                    double err = g_pFormationSimulator->_calculate_formation_error(node);
+                    double err = sim->_calculate_formation_error(node);
                     max_error = std::max(max_error, err);
 
                     Json::Value node_json;
@@ -806,9 +827,6 @@ namespace seven {
                     node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
                     node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
                     node_json["formation_error"] = std::round(err * 1e4) / 1e4;
-                    // 可选：添加状态字段
-                    // node_json["is_joining"] = node.is_joining;
-                    // node_json["is_leaving"] = node.is_leaving;
 
                     nodes.append(node_json);
                 }
@@ -818,71 +836,231 @@ namespace seven {
             }
         }
         catch (const std::exception& e) {
-            printf("编队初始化失败：%s\n", e.what());
-            g_pFormationSimulator = nullptr;
+            printf("编队 [ID:%d] 初始化失败：%s\n", fid, e.what());
+            g_FormationSimulators.erase(fid);
         }
     }
 
-    void SwitchFormation(const Formation_Type& type) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
-            return;
+    // 初始化多个编队
+    void Init_Multi_Formation(const MultiFormationContext& context, Json::Value& result) {
+        // 先清理所有旧实例
+        Cleanup_All_Formations();
+
+        result["formations"] = Json::Value(Json::arrayValue);
+
+        for (const auto& pair : context.formations) {
+            int fid = pair.first;
+            const FormationConfig& cfg = pair.second;
+
+            try {
+                UUVFormationSimulator* sim = new UUVFormationSimulator(cfg);
+                g_FormationSimulators[fid] = sim;
+                printf("多编队初始化：编队 [ID:%d] 成功，节点数=%d\n", fid, cfg.node_num);
+
+                // 为每个编队生成初始轨迹摘要
+                Json::Value form_entry;
+                form_entry["formation_id"] = fid;
+                form_entry["node_num"] = cfg.node_num;
+                form_entry["current_formation"] = static_cast<int>(cfg.current_formation);
+                form_entry["main_lon"] = cfg.main_node.lon_deg;
+                form_entry["main_lat"] = cfg.main_node.lat_deg;
+                result["formations"].append(form_entry);
+            }
+            catch (const std::exception& e) {
+                printf("多编队初始化：编队 [ID:%d] 失败：%s\n", fid, e.what());
+            }
         }
-        g_pFormationSimulator->switch_formation(type);
+        printf("多编队初始化完成，共 %zu 个编队\n", g_FormationSimulators.size());
     }
 
-    void TurnFormation(double heading_rate) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
+    void SwitchFormation(int formation_id, const Formation_Type& type) {
+        UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
+        if (sim == nullptr) {
+            printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
             return;
         }
-        g_pFormationSimulator->set_heading_rate(heading_rate);
+        sim->switch_formation(type);
     }
 
-    // ====================== 【新增】外部接口：添加节点 ======================
-    /*void AddNode(double lon, double lat, double speed, double heading, int join_frames) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
+    void TurnFormation(int formation_id, double heading_rate) {
+        UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
+        if (sim == nullptr) {
+            printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
             return;
         }
-        g_pFormationSimulator->add_node(lon, lat, speed, heading, join_frames);
-    }*/
+        sim->set_heading_rate(heading_rate);
+    }
 
-    void AddNode(vector<UUVNode>& input) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
+    void AddNode(int formation_id, vector<UUVNode>& input) {
+        UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
+        if (sim == nullptr) {
+            printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
             return;
         }
-        g_pFormationSimulator->add_node(input);
+        sim->add_node(input);
     }
 
     // ====================== 【新增】外部接口：删除节点 ======================
-    void RemoveLastNode(int num) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
+    void RemoveLastNode(int formation_id, int num) {
+        UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
+        if (sim == nullptr) {
+            printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
             return;
         }
-        g_pFormationSimulator->remove_last_node(num);
+        sim->remove_last_node(num);
     }
 
-    void Transformation_Use(CalcTempParam& task_param) {
-        if (g_pFormationSimulator == nullptr) {
-            printf("仿真器未初始化！\n");
+    // 单编队兼容接口：遍历所有编队，合并输出结果
+    /*void Transformation_Use(CalcTempParam& task_param) {
+        if (g_FormationSimulators.empty()) {
+            printf("无可用仿真器！\n");
             return;
         }
 
-        UAVTrajectory trajectory_data = g_pFormationSimulator->step_simulation();
+        task_param.trajectory_result.clear();
+        Json::Value formations_obj(Json::objectValue);
+
+        for (auto& pair : g_FormationSimulators) {
+            int fid = pair.first;
+            UUVFormationSimulator* sim = pair.second;
+            if (sim == nullptr) continue;
+
+            UAVTrajectory trajectory_data = sim->step_simulation();
+            auto all_trajectory = trajectory_data.getAllTrajectory();
+
+            task_param.run_frames = sim->getRunframe() * 10;
+
+            Json::Value frames_array(Json::arrayValue);
+
+            for (const auto& group : all_trajectory) {
+                int frame_id = group.frame;
+                const auto& frame_nodes = group.nodes_;
+
+                Json::Value frame_obj;
+                frame_obj["frame_id"] = frame_id;
+                frame_obj["formation_type"] = static_cast<int>(group.formation);
+
+                Json::Value nodes_array(Json::arrayValue);
+
+                for (const auto& node : frame_nodes) {
+                    double err = sim->_calculate_formation_error(node);
+
+                    Json::Value node_json;
+                    node_json["node_id"] = node.id;
+                    node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
+                    node_json["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
+                    node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
+                    node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
+                    node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
+                    node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
+                    node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
+                    node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
+                    node_json["formation_error"] = std::round(err * 1e4) / 1e4;
+
+                    nodes_array.append(node_json);
+                }
+
+                frame_obj["nodes"] = nodes_array;
+                frames_array.append(frame_obj);
+            }
+
+            formations_obj[std::to_string(fid)] = frames_array;
+        }
+
+        task_param.trajectory_result["formations"] = formations_obj;
+    }*/
+
+    void Transformation_Use(CalcTempParam& task_param) {
+        if (g_FormationSimulators.empty()) {
+            printf("无可用仿真器！\n");
+            return;
+        }
+
+        task_param.trajectory_result.clear();
+        Json::Value formations_obj(Json::objectValue);
+        // 线程锁：保护并行写入JSON（关键！）
+        std::mutex json_mutex;
+
+        // ======================
+        // 步骤1：把map转为vector，方便parallel_for索引遍历
+        // ======================
+        using SimPair = std::pair<int, UUVFormationSimulator*>;
+        std::vector<SimPair> sim_list(g_FormationSimulators.begin(), g_FormationSimulators.end());
+        size_t num_formations = sim_list.size();
+
+        // ======================
+        // 步骤2：你要的 PPL parallel_for 并行写法 ✅
+        // ======================
+        concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
+            {
+                // 获取当前编队
+                auto& pair = sim_list[index];
+                int fid = pair.first;
+                UUVFormationSimulator* sim = pair.second;
+                if (sim == nullptr) return;
+
+                // 核心：单个编队仿真计算（独立并行执行）
+                UAVTrajectory trajectory_data = sim->step_simulation();
+                auto all_trajectory = trajectory_data.getAllTrajectory();
+                Json::Value frames_array(Json::arrayValue);
+
+                // 原有轨迹组装逻辑（完全不变）
+                for (const auto& group : all_trajectory) {
+                    Json::Value frame_obj;
+                    frame_obj["frame_id"] = group.frame;
+                    frame_obj["formation_type"] = static_cast<int>(group.formation);
+                    Json::Value nodes_array(Json::arrayValue);
+
+                    for (const auto& node : group.nodes_) {
+                        double err = sim->_calculate_formation_error(node);
+                        Json::Value node_json;
+                        node_json["node_id"] = node.id;
+                        node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
+                        node_json["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
+                        node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
+                        node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
+                        node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
+                        node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
+                        node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
+                        node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
+                        node_json["formation_error"] = std::round(err * 1e4) / 1e4;
+                        nodes_array.append(node_json);
+                    }
+                    frame_obj["nodes"] = nodes_array;
+                    frames_array.append(frame_obj);
+                }
+
+                // ======================
+                // 加锁写入JSON（并行唯一共享资源）
+                // ======================
+                std::lock_guard<std::mutex> lock(json_mutex);
+                formations_obj[std::to_string(fid)] = frames_array;
+            });
+
+        // 设置运行帧数（保持原有逻辑）
+        if (!sim_list.empty()) {
+            task_param.run_frames = sim_list[0].second->getRunframe() * 10;
+        }
+
+        task_param.trajectory_result["formations"] = formations_obj;
+        printf("多编队 PPL 并行计算完成！\n");
+    }
+
+    // 多编队单帧接口：只执行指定 formation_id 的编队
+    void Transformation_Use_Multi(int formation_id, CalcTempParam& task_param) {
+        UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
+        if (sim == nullptr) {
+            printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
+            return;
+        }
+
+        UAVTrajectory trajectory_data = sim->step_simulation();
         auto all_trajectory = trajectory_data.getAllTrajectory();
 
         task_param.trajectory_result.clear();
         Json::Value frames_array(Json::arrayValue);
 
-        task_param.run_frames = g_pFormationSimulator->getRunframe() * 10;
-
-        if (all_trajectory.empty()) {
-            task_param.trajectory_result["frames"] = frames_array;
-            return;
-        }
+        task_param.run_frames = sim->getRunframe() * 10;
 
         for (const auto& group : all_trajectory) {
             int frame_id = group.frame;
@@ -895,7 +1073,7 @@ namespace seven {
             Json::Value nodes_array(Json::arrayValue);
 
             for (const auto& node : frame_nodes) {
-                double err = g_pFormationSimulator->_calculate_formation_error(node);
+                double err = sim->_calculate_formation_error(node);
 
                 Json::Value node_json;
                 node_json["node_id"] = node.id;
@@ -917,6 +1095,7 @@ namespace seven {
         }
 
         task_param.trajectory_result["frames"] = frames_array;
+        task_param.trajectory_result["formation_id"] = formation_id;
     }
 
     void UAVTrajectory::addFrame(int frame, const Formation_Type formation, const vector<UUVNode>& nodes)

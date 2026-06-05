@@ -28,10 +28,10 @@ namespace seven
 		void ReloadAllThread();
 		unsigned int GetThreadNum();
 		void StartWork(bool work);
-		bool SerSwitchTaskParam(Formation_Type input);
-		bool SerTurnTaskParam(double input);
-		bool SetAddNodeTaskParam(vector<UUVNode>& input);
-		bool SetRemoveNodeTaskParam(int num);
+		bool SerSwitchTaskParam(int formation_id, Formation_Type input);
+		bool SerTurnTaskParam(int formation_id, double input);
+		bool SetAddNodeTaskParam(int formation_id, vector<UUVNode>& input);
+		bool SetRemoveNodeTaskParam(int formation_id, int num);
 		bool SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output);
 		bool WakeUpAThread(int noThread);
 		bool Interrupted();
@@ -40,7 +40,7 @@ namespace seven
 
 	private:
 		void ThreadFunc(int noThread);
-		
+
 	private:
 		struct Pimple;
 		std::shared_ptr<Pimple> pMem_;
@@ -49,7 +49,7 @@ namespace seven
 
 	private:
 		static std::once_flag flag_;
-		static std::shared_ptr<CalcProcessThread> instance_;	// 静态成员变量，保存单例实例  
+		static std::shared_ptr<CalcProcessThread> instance_;
 
 	public:
 		CalcProcessThread(const CalcProcessThread&) = delete;

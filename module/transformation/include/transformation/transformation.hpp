@@ -2,6 +2,7 @@
 #define TRANS_HPP
 
 #include "core/CommonCore.hpp"
+#include <unordered_map>
 
 namespace seven{
 
@@ -27,8 +28,8 @@ namespace seven{
     */
     class UAVTrajectory {
     private:
-        std::vector<TrajectoryFrame> trajectory_data;  // 所有轨迹数据
-        std::vector<int> formation_change_frames;      // 队形变换帧数记录
+        std::vector<TrajectoryFrame> trajectory_data; // 所有轨迹数据
+        std::vector<int> formation_change_frames;   // 队形变换帧数记录
 
     public:
         /**
@@ -62,13 +63,13 @@ namespace seven{
     private:
         FormationConfig config;
         std::vector<UUVNode> nodes;
-        UAVTrajectory trajectory_;  //轨迹数据
+        UAVTrajectory trajectory_;
         double current_time;
         double last_output_time;
         bool is_transition;
         Formation_Type last_formation;
-        int max_id; // 跟踪最大节点ID
-        std::mutex sim_mutex;  // 线程安全锁
+        int max_id;
+        std::mutex sim_mutex;
 
         // 私有方法
         void _validate_config();
@@ -114,25 +115,46 @@ namespace seven{
         void InitialParams(FormationConfig& forparams_);
     };
 
-    // 外部接口声明（集成到服务端的核心接口）
-    // 初始化编队
+    // ====================== 多编队仿真器管理 ======================
+    // 全局仿真器映射表：key = formation_id, value = 仿真器实例
+    extern std::unordered_map<int, UUVFormationSimulator*> g_FormationSimulators;
+
+    // 根据 formation_id 获取对应仿真器（带空指针检查）
+    inline UUVFormationSimulator* GetFormationSimulator(int formation_id) {
+        auto it = g_FormationSimulators.find(formation_id);
+        if (it != g_FormationSimulators.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    // 清理所有编队仿真器
+    void SEVEN_EXPORTS Cleanup_All_Formations();
+
+    // ====================== 外部接口声明 ======================
+    // 初始化单个编队（兼容旧接口，内部使用 formation_id = 0）
     void SEVEN_EXPORTS Init_formation(const FormationConfig& config, Json::Value& trajectory_result);
 
-    // 编队变换执行（每帧调用）
+    // 初始化多个编队（新接口）
+    void SEVEN_EXPORTS Init_Multi_Formation(const MultiFormationContext& context, Json::Value& result);
+
+    // 编队变换执行（每帧调用，遍历所有编队并合并输出）
     void SEVEN_EXPORTS Transformation_Use(CalcTempParam& task_param);
 
-    void SEVEN_EXPORTS SwitchFormation(const Formation_Type& type);
+    // 多编队变换执行（每帧调用，仅执行指定编队）
+    void SEVEN_EXPORTS Transformation_Use_Multi(int formation_id, CalcTempParam& task_param);
 
-    void SEVEN_EXPORTS TurnFormation(double heading_rate);
+    // 队形切换（指定编队ID）
+    void SEVEN_EXPORTS SwitchFormation(int formation_id, const Formation_Type& type);
 
-    void SEVEN_EXPORTS AddNode(vector<UUVNode>& input);
+    // 转向控制（指定编队ID）
+    void SEVEN_EXPORTS TurnFormation(int formation_id, double heading_rate);
 
-    void SEVEN_EXPORTS RemoveLastNode(int num);
+    // 添加节点（指定编队ID）
+    void SEVEN_EXPORTS AddNode(int formation_id, vector<UUVNode>& input);
 
-    // 全局仿真器实例（服务端单例使用）
-    extern UUVFormationSimulator* g_pFormationSimulator;
+    // 删除末尾节点（指定编队ID）
+    void SEVEN_EXPORTS RemoveLastNode(int formation_id, int num);
 
 }
-
-
 #endif
