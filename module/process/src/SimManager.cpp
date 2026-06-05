@@ -416,6 +416,9 @@ namespace seven {
         //重置运行帧数
         CalcParamManager::Ins().SetRunFramesCnt(0);
 
+        // 清理所有编队仿真器，释放堆内存
+        Cleanup_All_Formations();
+
         //calc_thread_ptr->UnInit();
 
         // 更新仿真状态
