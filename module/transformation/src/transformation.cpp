@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <vector>
 #include <ppl.h>
 
@@ -491,6 +492,7 @@ namespace seven {
             _transition_formation();
         }
         apply_collision_avoidance();
+        _formation_keeping();  // 队形保持：避碰后持续拉回目标位置
         double w = to_radians(config.heading_rate);
 
         std::vector<size_t> indices_to_remove;
@@ -588,7 +590,48 @@ namespace seven {
         }
     }
 
-    // ====================== 【新增】编队稳定判断 ======================
+    // ====================== 队形保持 ======================
+    void UUVFormationSimulator::_formation_keeping() {
+        // 将因避碰偏离的节点拉回目标相对位置
+        // 关键约束：每步最大修正量硬限制为 0.5m，确保碰撞避免始终优先
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            UUVNode& node = nodes[i];
+            if (node.is_leaving || node.is_joining) {
+                continue;
+            }
+            double dx = node.target_x - node.rel_x;
+            double dy = node.target_y - node.rel_y;
+            double dist = std::hypot(dx, dy);
+            if (dist < 0.03) {
+                continue;  // 已在目标位置，无需调整
+            }
+
+            // 自适应回位速度（基于偏离距离），硬限制每步修正量
+            double speed;
+            if (dist < 1.5) {
+                speed = 0.10;       // 微调：慢速收敛
+            }
+            else if (dist < 5.0) {
+                speed = 0.10 + (dist - 1.5) * 0.02;   // 0.10 → 0.17
+            }
+            else if (dist < 10.0) {
+                speed = 0.17 + (dist - 5.0) * 0.006;  // 0.17 → 0.20
+            }
+            else {
+                speed = 0.20;
+            }
+
+            double correction = dist * speed;
+            if (correction > FK_MAX_STEP) {
+                speed = FK_MAX_STEP / dist;  // 缩放速度以满足硬限制
+            }
+
+            node.rel_x += dx * speed;
+            node.rel_y += dy * speed;
+        }
+    }
+
+    // ====================== 编队稳定判断 ======================
     void UUVFormationSimulator::_record_transition_step() {
         // 没有在过渡，直接返回
         if (!is_transition) {
@@ -765,6 +808,32 @@ namespace seven {
         config = forparams_;
     }
 
+    void UUVFormationSimulator::apply_follower_offset(size_t node_index, double delta_rel_x, double delta_rel_y)
+    {
+        if (node_index < nodes.size()) {
+            nodes[node_index].rel_x += delta_rel_x;
+            nodes[node_index].rel_y += delta_rel_y;
+        }
+    }
+
+    void UUVFormationSimulator::apply_leader_offset(double delta_lon, double delta_lat)
+    {
+        if (!nodes.empty()) {
+            nodes[0].pos_.lon_deg += delta_lon;
+            nodes[0].pos_.lat_deg += delta_lat;
+            config.main_node.lon_deg = nodes[0].pos_.lon_deg;
+            config.main_node.lat_deg = nodes[0].pos_.lat_deg;
+        }
+    }
+
+    double UUVFormationSimulator::get_main_heading_rad() const
+    {
+        if (!nodes.empty()) {
+            return to_radians(nodes[0].heading);
+        }
+        return 0.0;
+    }
+
     // ====================== 外部接口实现 ======================
 
     // 清理所有编队仿真器
@@ -776,6 +845,122 @@ namespace seven {
             }
         }
         g_FormationSimulators.clear();
+    }
+
+    // ====================== 跨编队全局碰撞避免 ======================
+    void ApplyInterFormationAvoidance() {
+        if (g_FormationSimulators.size() <= 1) return;
+
+        // 取第一个编队的主节点为全局 ENU 参考原点
+        auto first_it = g_FormationSimulators.begin();
+        UUVFormationSimulator* ref_sim = first_it->second;
+        if (ref_sim == nullptr) return;
+
+        const auto& ref_nodes = ref_sim->get_nodes();
+        if (ref_nodes.empty()) return;
+        double ref_lon = ref_nodes[0].pos_.lon_deg;
+        double ref_lat = ref_nodes[0].pos_.lat_deg;
+
+        // 收集所有节点的全局 ENU 位置
+        struct NodeEntry {
+            UUVFormationSimulator* sim;
+            size_t node_index;
+            bool is_leader;
+        };
+        std::vector<NodeEntry> entries;
+        std::vector<Point2D> positions;
+
+        for (auto& pair : g_FormationSimulators) {
+            UUVFormationSimulator* sim = pair.second;
+            if (sim == nullptr) continue;
+            const auto& nodes = sim->get_nodes();
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                const UUVNode& node = nodes[i];
+                double lr = to_radians(node.pos_.lon_deg);
+                double la = to_radians(node.pos_.lat_deg);
+                double rlr = to_radians(ref_lon);
+                double rla = to_radians(ref_lat);
+                double gx = R_EARTH * (lr - rlr) * std::cos(rla);
+                double gy = R_EARTH * (la - rla);
+
+                entries.push_back({sim, i, (i == 0)});
+                positions.emplace_back(gx, gy);
+            }
+        }
+
+        // 全局碰撞分离（使用更大的跨编队有效半径）
+        double inter_radius = COLLISION_RADIUS * 2.0 + INTER_FORMATION_BUFFER;
+        std::vector<Point2D> adjusted = positions;
+        int iter = 0;
+        bool has_collision = true;
+
+        while (has_collision && iter < MAX_COLLISION_ITER) {
+            has_collision = false;
+            std::vector<std::tuple<double, int, int>> pairs;
+
+            for (size_t i = 0; i < adjusted.size(); ++i) {
+                for (size_t j = i + 1; j < adjusted.size(); ++j) {
+                    if (entries[i].sim == entries[j].sim) continue;  // 跳过同编队
+                    double d = (adjusted[i] - adjusted[j]).norm();
+                    if (d < inter_radius) {
+                        pairs.emplace_back(d, (int)i, (int)j);
+                        has_collision = true;
+                    }
+                }
+            }
+            if (!has_collision) break;
+
+            std::sort(pairs.begin(), pairs.end(),
+                [](const auto& a, const auto& b) { return std::get<0>(a) < std::get<0>(b); });
+
+            for (const auto& pr : pairs) {
+                double d = std::get<0>(pr);
+                int a = std::get<1>(pr);
+                int b = std::get<2>(pr);
+                Point2D dir = (adjusted[a] - adjusted[b]).normalized();
+                double step = std::min((inter_radius - d) / 2.0, MAX_ADJUST_STEP);
+                adjusted[a] = adjusted[a] + dir * step;
+                adjusted[b] = adjusted[b] - dir * step;
+            }
+            iter++;
+        }
+
+        // 将调整量写回各节点
+        std::set<UUVFormationSimulator*> modified_sims;
+        for (size_t k = 0; k < entries.size(); ++k) {
+            double delta_x = adjusted[k].x - positions[k].x;
+            double delta_y = adjusted[k].y - positions[k].y;
+            if (std::fabs(delta_x) < 1e-8 && std::fabs(delta_y) < 1e-8) continue;
+
+            UUVFormationSimulator* sim = entries[k].sim;
+            size_t idx = entries[k].node_index;
+
+            if (entries[k].is_leader) {
+                // 领航节点：将调整后的 ENU 位置转回 lon/lat
+                double rlr = to_radians(ref_lon);
+                double rla = to_radians(ref_lat);
+                double new_lon = to_degrees(rlr + adjusted[k].x / (R_EARTH * std::cos(rla)));
+                double new_lat = to_degrees(rla + adjusted[k].y / R_EARTH);
+                double delta_lon = new_lon - sim->get_nodes()[0].pos_.lon_deg;
+                double delta_lat = new_lat - sim->get_nodes()[0].pos_.lat_deg;
+                sim->apply_leader_offset(delta_lon, delta_lat);
+            }
+            else {
+                // 跟随节点：用逆旋转矩阵将全局 ENU 调整量转为 rel 调整量
+                double hdg_rad = sim->get_main_heading_rad();
+                double cos_h = std::cos(hdg_rad);
+                double sin_h = std::sin(hdg_rad);
+                double delta_rel_x =  cos_h * delta_x + sin_h * delta_y;
+                double delta_rel_y = -sin_h * delta_x + cos_h * delta_y;
+                sim->apply_follower_offset(idx, delta_rel_x, delta_rel_y);
+            }
+            modified_sims.insert(sim);
+        }
+
+        // 重跑编队内避碰，修复因跨编队调整可能引入的编队内碰撞
+        for (auto* sim : modified_sims) {
+            sim->reapply_collision_avoidance();
+        }
     }
 
     // 初始化单个编队（兼容旧接口，使用 config 中的 formation_id，默认为 0）
@@ -978,33 +1163,42 @@ namespace seven {
 
         task_param.trajectory_result.clear();
         Json::Value formations_obj(Json::objectValue);
-        // 线程锁：保护并行写入JSON（关键！）
         std::mutex json_mutex;
 
-        // ======================
-        // 步骤1：把map转为vector，方便parallel_for索引遍历
-        // ======================
         using SimPair = std::pair<int, UUVFormationSimulator*>;
         std::vector<SimPair> sim_list(g_FormationSimulators.begin(), g_FormationSimulators.end());
         size_t num_formations = sim_list.size();
 
         // ======================
-        // 步骤2：你要的 PPL parallel_for 并行写法 ✅
+        // 步骤1：所有编队并行执行仿真步进
         // ======================
         concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
             {
-                // 获取当前编队
+                auto& pair = sim_list[index];
+                UUVFormationSimulator* sim = pair.second;
+                if (sim == nullptr) return;
+                sim->step_simulation();
+            });
+
+        // ======================
+        // 步骤2：跨编队全局碰撞避免（串行，在所有编队步进完成后）
+        // ======================
+        ApplyInterFormationAvoidance();
+
+        // ======================
+        // 步骤3：并行组装 JSON 输出
+        // ======================
+        concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
+            {
                 auto& pair = sim_list[index];
                 int fid = pair.first;
                 UUVFormationSimulator* sim = pair.second;
                 if (sim == nullptr) return;
 
-                // 核心：单个编队仿真计算（独立并行执行）
-                UAVTrajectory trajectory_data = sim->step_simulation();
+                UAVTrajectory& trajectory_data = sim->getUAVtrajectory();
                 auto all_trajectory = trajectory_data.getAllTrajectory();
                 Json::Value frames_array(Json::arrayValue);
 
-                // 原有轨迹组装逻辑（完全不变）
                 for (const auto& group : all_trajectory) {
                     Json::Value frame_obj;
                     frame_obj["frame_id"] = group.frame;
@@ -1030,14 +1224,11 @@ namespace seven {
                     frames_array.append(frame_obj);
                 }
 
-                // ======================
-                // 加锁写入JSON（并行唯一共享资源）
-                // ======================
                 std::lock_guard<std::mutex> lock(json_mutex);
                 formations_obj[std::to_string(fid)] = frames_array;
             });
 
-        // 设置运行帧数（保持原有逻辑）
+        // 设置运行帧数
         if (!sim_list.empty()) {
             task_param.run_frames = sim_list[0].second->getRunframe() * 10;
         }

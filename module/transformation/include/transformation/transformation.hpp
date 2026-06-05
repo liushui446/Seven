@@ -14,6 +14,10 @@ namespace seven{
     const double MAX_ADJUST_STEP = 1.0;
     const double ERROR_STABLE_THRESHOLD = 0.02;
 
+    // 跨编队避碰参数
+    const double INTER_FORMATION_BUFFER = 2.0;   // 跨编队额外安全距离
+    const double FK_MAX_STEP = 0.5;               // 队形保持每步最大修正量
+
     // 运动学物理约束
     const double MAX_SPEED = 6.0;
 
@@ -84,6 +88,7 @@ namespace seven{
         std::pair<double, double> _enu2geo(double x, double y, double rlon, double rlat);
         void _update_maneuver();
         void _record_transition_step();
+        void _formation_keeping();   // 队形保持：将避碰偏离节点拉回目标位置
 
     public:
         // 构造函数
@@ -113,6 +118,22 @@ namespace seven{
         void set_heading_rate(double rate) { config.heading_rate = rate; }
 
         void InitialParams(FormationConfig& forparams_);
+
+        // ====================== 跨编队避碰接口 ======================
+        // 获取节点列表（只读引用，供跨编队避碰使用）
+        const std::vector<UUVNode>& get_nodes() const { return nodes; }
+
+        // 对跟随节点施加 rel_x/rel_y 偏移（跨编队避碰回调）
+        void apply_follower_offset(size_t node_index, double delta_rel_x, double delta_rel_y);
+
+        // 对领航节点施加 lon/lat 偏移（跨编队避碰回调）
+        void apply_leader_offset(double delta_lon, double delta_lat);
+
+        // 重跑编队内避碰（跨编队避碰后调用）
+        void reapply_collision_avoidance() { apply_collision_avoidance(); }
+
+        // 获取主节点航向（弧度）
+        double get_main_heading_rad() const;
     };
 
     // ====================== 多编队仿真器管理 ======================
@@ -130,6 +151,9 @@ namespace seven{
 
     // 清理所有编队仿真器
     void SEVEN_EXPORTS Cleanup_All_Formations();
+
+    // 跨编队全局碰撞避免
+    void ApplyInterFormationAvoidance();
 
     // ====================== 外部接口声明 ======================
     // 初始化单个编队（兼容旧接口，内部使用 formation_id = 0）
