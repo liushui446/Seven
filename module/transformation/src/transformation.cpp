@@ -789,6 +789,24 @@ namespace seven {
         return trajectory_;
     }
 
+    void UUVFormationSimulator::step_single_frame() {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+        current_time += config.sim_step;
+        _update_maneuver();
+        _record_transition_step();
+    }
+
+    void UUVFormationSimulator::record_current_frame() {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+        trajectory_.addFrame(static_cast<int>(current_time * 10),
+                             config.current_formation, nodes);
+    }
+
+    void UUVFormationSimulator::clear_trajectory() {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+        trajectory_.clearAllTrajectory();
+    }
+
     UAVTrajectory& UUVFormationSimulator::getUAVtrajectory()
     {
         std::lock_guard<std::mutex> lock(sim_mutex);
@@ -1169,24 +1187,47 @@ namespace seven {
         std::vector<SimPair> sim_list(g_FormationSimulators.begin(), g_FormationSimulators.end());
         size_t num_formations = sim_list.size();
 
+        // 从第一个编队获取批次仿真参数
+        UUVFormationSimulator* first_sim = sim_list[0].second;
+        if (first_sim == nullptr) return;
+        double sim_step = first_sim->get_config().sim_step;
+        double total_batch_time = first_sim->get_config().return_frames / 10.0;
+
         // ======================
-        // 步骤1：所有编队并行执行仿真步进
+        // Phase 0：并行清空所有编队的轨迹
         // ======================
         concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
             {
-                auto& pair = sim_list[index];
-                UUVFormationSimulator* sim = pair.second;
-                if (sim == nullptr) return;
-                sim->step_simulation();
+                UUVFormationSimulator* sim = sim_list[index].second;
+                if (sim) sim->clear_trajectory();
             });
 
         // ======================
-        // 步骤2：跨编队全局碰撞避免（串行，在所有编队步进完成后）
+        // Phase 1：逐帧循环 —— 每帧执行：步进 → 跨编队避碰 → 记录轨迹
         // ======================
-        ApplyInterFormationAvoidance();
+        for (double t = 0.0; t < total_batch_time; t += sim_step) {
+            // 1a: 并行步进 —— 所有编队各自前进一帧
+            concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
+                {
+                    UUVFormationSimulator* sim = sim_list[index].second;
+                    if (sim) sim->step_single_frame();
+                });
+
+            // 1b: 串行避碰 —— 跨编队全局碰撞避免（每帧都执行）
+            if (num_formations > 1) {
+                ApplyInterFormationAvoidance();
+            }
+
+            // 1c: 并行记录 —— 将避碰后的节点状态写入轨迹
+            concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
+                {
+                    UUVFormationSimulator* sim = sim_list[index].second;
+                    if (sim) sim->record_current_frame();
+                });
+        }
 
         // ======================
-        // 步骤3：并行组装 JSON 输出
+        // Phase 2：并行组装 JSON 输出
         // ======================
         concurrency::parallel_for((size_t)0, num_formations, [&](size_t index)
             {

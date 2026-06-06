@@ -101,8 +101,17 @@ namespace seven{
 
         void remove_last_node(int num);
 
-        // 仿真步进
+        // 仿真步进（内部循环多帧，供单编队模式使用）
         UAVTrajectory& step_simulation();
+
+        // 单帧步进（不含轨迹记录，供多编队逐帧循环使用）
+        void step_single_frame();
+
+        // 将当前节点状态记录到轨迹（避碰后调用）
+        void record_current_frame();
+
+        // 线程安全清空轨迹
+        void clear_trajectory();
 
         // 获取当前配置
         FormationConfig get_config() const { return config; }
