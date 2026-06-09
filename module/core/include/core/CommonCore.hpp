@@ -105,7 +105,8 @@ namespace seven
         Triangle = 2,
         Circle = 3,
         Diamond = 4,
-        Line = 5
+        Line = 5,
+        Custom = 6  // 预留自定义队形
     };
 
     // 坐标结构体定义
@@ -449,7 +450,7 @@ namespace seven
         // 【新增】每个编队唯一 ID，用于独立控制
         int formation_id;
         // ======================================
-
+        int custom_id;              // 预留自定义编队ID字段
         int node_num;                // 节点数量 (4~10)
         int max_frames;           // 最大运行帧数(1500)
         int return_frames;        // 返回结果数据帧数
@@ -463,10 +464,12 @@ namespace seven
         LLA main_node;               // 主节点经纬度
         Formation_Type trans_formation;  // 需要变换的队形(line/rect/circle/diamond/triangle)
         Formation_Type current_formation;// 当前队形
+        //vector<LLA> node_positions;        // 各节点经纬度列表(°/km)
+        //vector<Point2D> node_rel_positions; // 各节点相对位置列表
         
         //double output_interval;      // 输出间隔 (s)
 
-        FormationConfig() : formation_id(-1), node_num(10), max_frames(3000),
+        FormationConfig() : formation_id(-1), custom_id(-1), node_num(10), max_frames(3000),
             return_frames(10), rel_distance(10.0), collision_radius(4.0),
             init_speed(2.0), init_heading(0.0),heading_rate(2.0), acceleration(0.0), sim_step(0.1),
             main_node(), trans_formation(Formation_Type::Line), current_formation(Formation_Type::Line){}
@@ -476,6 +479,7 @@ namespace seven
         FormationConfig& operator=(const FormationConfig& other) {
 
             this->formation_id = other.formation_id;
+            this->custom_id = other.custom_id;
             this->node_num = other.node_num;
             this->max_frames = other.max_frames;
             this->return_frames = other.return_frames;
@@ -498,7 +502,32 @@ namespace seven
 
 
     // 多编队管理器：key = formation_id, value = 编队参数
-    using FormationMap = std::unordered_map<int, FormationConfig>;
+    using FormationMap = std::map<int, FormationConfig>;
+
+    // 自定义编队队形结构体
+    struct CustomFormationData {
+        int formation_id;                // 队形ID
+        int node_num;                    // 节点数量 (包含主节点)
+        vector<Point2D> node_rel_positions; // 各节点相对位置列表
+
+        CustomFormationData() : formation_id(-1),node_num(0) { node_rel_positions.clear(); }
+
+        CustomFormationData(const CustomFormationData&) = default;
+
+        CustomFormationData& operator=(const CustomFormationData& other) {
+            this->formation_id = other.formation_id;
+            this->node_num = other.node_num;
+            this->node_rel_positions.clear();
+            for (const auto& pos : other.node_rel_positions) {
+                this->node_rel_positions.push_back(pos);
+            }
+            return *this;
+        }
+
+    };
+
+    // 阵型管理器：key = formation_id, value = 阵型数据
+    using CustomFormationList = std::unordered_map<int, CustomFormationData>;
 
     // 或者放到上下文里
     struct MultiFormationContext
@@ -546,6 +575,32 @@ namespace seven
             {
                 it->second.rel_distance = new_dist;
             }
+        }
+
+        CustomFormationList custom_formations; // 自定义编队数据列表
+
+        // 根据 ID 获取阵型（安全）
+        bool GetFormationById(int id, CustomFormationData& out_param)
+        {
+            auto it = custom_formations.find(id);
+            if (it != custom_formations.end())
+            {
+                out_param = it->second;
+                return true;
+            }
+            return false;
+        }
+
+        // 加入新阵型
+        void AddCustomFormation(int id, CustomFormationData& param)
+        {
+            custom_formations.emplace(id, param);
+        }
+
+        // 清空所有阵型
+        void ClearCustomFormations()
+        {
+            custom_formations.clear();
         }
 
     };

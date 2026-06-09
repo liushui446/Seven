@@ -46,6 +46,9 @@ namespace seven {
         case Formation_Type::Triangle:
             formation_str = "Triangle";
             break;
+        case Formation_Type::Custom:
+            formation_str = "Custom";
+            break;
         default:
             break;
         }
@@ -63,11 +66,12 @@ namespace seven {
     }
 
     // ====================== UUVFormationSimulator 实现 ======================
-    UUVFormationSimulator::UUVFormationSimulator(const FormationConfig& cfg)
+    UUVFormationSimulator::UUVFormationSimulator(const FormationConfig& cfg, CustomFormationList& custom_data)
         : config(cfg), current_time(0.0), last_output_time(0.0),
         is_transition(false), last_formation(cfg.current_formation), max_id(0) {
         trajectory_.clearAllTrajectory();
         _validate_config();
+        _set_custom_data_list(custom_data);
         _init_nodes();
         trajectory_.addFrame((current_time * 10), config.trans_formation, nodes);
     }
@@ -76,9 +80,9 @@ namespace seven {
         if (config.node_num < 2 || config.node_num > 10) {
             throw std::invalid_argument("节点数量必须在2~10之间，当前值：" + std::to_string(config.node_num));
         }
-        if (config.rel_distance <= 0.0) {
+        /*if (config.rel_distance <= 0.0) {
             throw std::invalid_argument("节点间距必须大于0");
-        }
+        }*/
     }
 
     void UUVFormationSimulator::_init_nodes() {
@@ -117,6 +121,13 @@ namespace seven {
         }
     }
 
+    void UUVFormationSimulator::_set_custom_data_list(CustomFormationList& data) {
+        for (auto &pair : data)
+        {
+            custom_data.emplace(pair.first, pair.second);
+        }
+    }
+
     void UUVFormationSimulator::_set_initial_position() {
 
         nodes[0].rel_x = 0.0;
@@ -145,17 +156,27 @@ namespace seven {
         }
     }
 
-    void UUVFormationSimulator::switch_formation(const Formation_Type& cmd) {
+    bool UUVFormationSimulator::switch_formation(const Formation_Type& cmd) {
         std::lock_guard<std::mutex> lock(sim_mutex);
         if (cmd == config.current_formation) {
             printf("当前已是该队形\n");
-            return;
+            return false;
         }
 
         last_formation = config.current_formation;
         config.trans_formation = cmd;
+        if(cmd == Formation_Type::Custom)
+        {
+            if(config.node_num != custom_data[config.custom_id].node_num)
+            {
+                printf("⚠️ 自定义队形节点数与编队配置不匹配！请检查\n");
+                return false;
+            }
+        }
+
         _set_target_formation();
         is_transition = true;
+        return true;
     }
 
     // ====================== 【新增】设置目标队形（过滤脱离节点） ======================
@@ -340,7 +361,7 @@ namespace seven {
             throw std::invalid_argument("从节点数量必须在1~9之间，当前值：" + std::to_string(cnt));
         }
 
-        double d = config.rel_distance;
+        double d = config.rel_distance;  //需要设置
         Formation_Type f = config.trans_formation;
 
         if (f == Formation_Type::Line) {
@@ -437,6 +458,30 @@ namespace seven {
             }
             else if (num == 10) {
                 positions = { {-d / 2, -d}, {d / 2, -d}, {-d, -2 * d}, {0, -2 * d}, {d, -2 * d}, {-1.5 * d, -3 * d}, {-0.5 * d, -3 * d}, {0.5 * d, -3 * d}, {1.5 * d, -3 * d} };
+            }
+        }
+        else if (f == Formation_Type::Custom) {
+            int num = cnt + 1;
+            // 从全局上下文获取自定义队形点位
+            if(custom_data.find(config.custom_id) != custom_data.end())
+            {
+                if(custom_data.find(config.custom_id)->second.node_num == num)//初始化自定义队形使用
+                {
+                    vector<Point2D>& temp_positions = custom_data.find(config.custom_id)->second.node_rel_positions;//包含主节点
+                    for(size_t i = 0; i < temp_positions.size(); ++i)
+                    {
+                        //printf("自定义队形目标点 %d: (%.1f, %.1f)\n", i+1, positions[i].first, positions[i].second);
+                        positions.emplace_back(temp_positions[i].x, temp_positions[i].y);
+                    }
+                }
+                else//节点数不匹配(增加节点或者删除节点)
+                {
+                    for(size_t i = 0; i < nodes.size(); ++i)
+                    {
+                        //printf("自定义队形目标点 %d: (%.1f, %.1f)\n", i+1, positions[i].first, positions[i].second);
+                        positions.emplace_back(nodes[i].rel_x, nodes[i].rel_y);
+                    }
+                }
             }
         }
 
@@ -631,6 +676,11 @@ namespace seven {
         }
     }
 
+    void UUVFormationSimulator::_set_custom_id(int custom_id)
+    {
+        config.custom_id = custom_id;
+    }
+
     // ====================== 编队稳定判断 ======================
     void UUVFormationSimulator::_record_transition_step() {
         // 没有在过渡，直接返回
@@ -688,7 +738,7 @@ namespace seven {
             return;
         }
 
-        if (nodes.size()+ input.size() > 10) {
+        if (nodes.size() + input.size() > 10) {
             printf("❌ 超过最大节点数10个，添加数量过多\n");
             return;
         }
@@ -698,7 +748,26 @@ namespace seven {
 
         for (int node_index = 0; node_index < input.size(); node_index++) {
             // 计算新节点相对于主节点的初始位置
-            auto [rel_x, rel_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
+            double rel_x = 0.0;
+            double rel_y = 0.0;
+            if(config.current_formation == Formation_Type::Custom)
+            {
+                if(custom_data.find(config.custom_id) != custom_data.end())
+                {
+                    rel_x = input[node_index].rel_x;
+                    rel_y = input[node_index].rel_y;
+                }
+                else{
+                    printf("❌ 不存在自定义队形[%s]\n", std::to_string(config.custom_id).c_str());
+                    return;
+                }
+            }
+            else{
+                auto [geo_x, geo_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
+                rel_x = geo_x;
+                rel_y = geo_y;
+            }
+            //auto [rel_x, rel_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
 
             // 创建新节点
             UUVNode new_node;
@@ -982,67 +1051,67 @@ namespace seven {
     }
 
     // 初始化单个编队（兼容旧接口，使用 config 中的 formation_id，默认为 0）
-    void Init_formation(const FormationConfig& config, Json::Value& trajectory_result) {
-        int fid = config.formation_id;
+    //void Init_formation(const FormationConfig& config, Json::Value& trajectory_result) {
+    //    int fid = config.formation_id;
 
-        // 如果该 ID 已存在，先清理旧实例
-        auto it = g_FormationSimulators.find(fid);
-        if (it != g_FormationSimulators.end() && it->second != nullptr) {
-            delete it->second;
-            it->second = nullptr;
-        }
+    //    // 如果该 ID 已存在，先清理旧实例
+    //    auto it = g_FormationSimulators.find(fid);
+    //    if (it != g_FormationSimulators.end() && it->second != nullptr) {
+    //        delete it->second;
+    //        it->second = nullptr;
+    //    }
 
-        try {
-            UUVFormationSimulator* sim = new UUVFormationSimulator(config);
-            g_FormationSimulators[fid] = sim;
-            printf("编队 [ID:%d] 初始化成功！\n", fid);
+    //    try {
+    //        UUVFormationSimulator* sim = new UUVFormationSimulator(config);
+    //        g_FormationSimulators[fid] = sim;
+    //        printf("编队 [ID:%d] 初始化成功！\n", fid);
 
-            UAVTrajectory& trajectory_data = sim->getUAVtrajectory();
+    //        UAVTrajectory& trajectory_data = sim->getUAVtrajectory();
 
-            auto all_trajectory = trajectory_data.getAllTrajectory();
-            if (all_trajectory.empty()) return;
+    //        auto all_trajectory = trajectory_data.getAllTrajectory();
+    //        if (all_trajectory.empty()) return;
 
-            trajectory_result["frames"] = Json::Value(Json::arrayValue);
-            trajectory_result["formation_id"] = fid;
+    //        trajectory_result["frames"] = Json::Value(Json::arrayValue);
+    //        trajectory_result["formation_id"] = fid;
 
-            for (const auto& group : all_trajectory) {
-                int frame_id = group.frame;
-                const auto& frame_nodes = group.nodes_;
+    //        for (const auto& group : all_trajectory) {
+    //            int frame_id = group.frame;
+    //            const auto& frame_nodes = group.nodes_;
 
-                Json::Value frame_obj;
-                frame_obj["frame_id"] = frame_id;
-                frame_obj["formation_type"] = static_cast<int>(group.formation);
+    //            Json::Value frame_obj;
+    //            frame_obj["frame_id"] = frame_id;
+    //            frame_obj["formation_type"] = static_cast<int>(group.formation);
 
-                Json::Value nodes(Json::arrayValue);
-                double max_error = 0.0;
-                for (const auto& node : frame_nodes) {
-                    double err = sim->_calculate_formation_error(node);
-                    max_error = std::max(max_error, err);
+    //            Json::Value nodes(Json::arrayValue);
+    //            double max_error = 0.0;
+    //            for (const auto& node : frame_nodes) {
+    //                double err = sim->_calculate_formation_error(node);
+    //                max_error = std::max(max_error, err);
 
-                    Json::Value node_json;
-                    node_json["node_id"] = node.id;
-                    node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
-                    node_json["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
-                    node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
-                    node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
-                    node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
-                    node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
-                    node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
-                    node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
-                    node_json["formation_error"] = std::round(err * 1e4) / 1e4;
+    //                Json::Value node_json;
+    //                node_json["node_id"] = node.id;
+    //                node_json["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
+    //                node_json["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
+    //                node_json["speed"] = std::round(node.speed * 1e3) / 1e3;
+    //                node_json["heading"] = std::round(node.heading * 1e3) / 1e3;
+    //                node_json["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
+    //                node_json["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
+    //                node_json["target_x"] = std::round(node.target_x * 1e3) / 1e3;
+    //                node_json["target_y"] = std::round(node.target_y * 1e3) / 1e3;
+    //                node_json["formation_error"] = std::round(err * 1e4) / 1e4;
 
-                    nodes.append(node_json);
-                }
+    //                nodes.append(node_json);
+    //            }
 
-                frame_obj["nodes"] = nodes;
-                trajectory_result["frames"].append(frame_obj);
-            }
-        }
-        catch (const std::exception& e) {
-            printf("编队 [ID:%d] 初始化失败：%s\n", fid, e.what());
-            g_FormationSimulators.erase(fid);
-        }
-    }
+    //            frame_obj["nodes"] = nodes;
+    //            trajectory_result["frames"].append(frame_obj);
+    //        }
+    //    }
+    //    catch (const std::exception& e) {
+    //        printf("编队 [ID:%d] 初始化失败：%s\n", fid, e.what());
+    //        g_FormationSimulators.erase(fid);
+    //    }
+    //}
 
     // 初始化多个编队
     void Init_Multi_Formation(const MultiFormationContext& context, Json::Value& result) {
@@ -1051,18 +1120,26 @@ namespace seven {
 
         result["formations"] = Json::Value(Json::arrayValue);
 
-        for (const auto& pair : context.formations) {
-            int fid = pair.first;
-            const FormationConfig& cfg = pair.second;
+        CustomFormationList custom_data = context.custom_formations;  // 传递整个自定义编队列表，供每个编队实例查询
+        auto data = context.formations;
+        for (auto iter = data.begin(); iter != data.end(); iter++) {
+            int fid = iter->first;
+
+            printf("%d ", iter->first);
+            const FormationConfig& cfg = iter->second;
 
             try {
-                UUVFormationSimulator* sim = new UUVFormationSimulator(cfg);
+                UUVFormationSimulator* sim = new UUVFormationSimulator(cfg, custom_data);
+                //暂存一份阵型参数
+                //sim->_set_custom_data_list(custom_data);
+
                 g_FormationSimulators[fid] = sim;
                 printf("多编队初始化：编队 [ID:%d] 成功，节点数=%d\n", fid, cfg.node_num);
 
                 // 为每个编队生成初始轨迹摘要
                 Json::Value form_entry;
                 form_entry["formation_id"] = fid;
+                form_entry["custom_id"] = cfg.custom_id;
                 form_entry["node_num"] = cfg.node_num;
                 form_entry["current_formation"] = static_cast<int>(cfg.current_formation);
                 form_entry["main_lon"] = cfg.main_node.lon_deg;
@@ -1076,13 +1153,15 @@ namespace seven {
         printf("多编队初始化完成，共 %zu 个编队\n", g_FormationSimulators.size());
     }
 
-    void SwitchFormation(int formation_id, const Formation_Type& type) {
+    bool SwitchFormation(int formation_id, int custom_id, const Formation_Type& type) {
         UUVFormationSimulator* sim = GetFormationSimulator(formation_id);
         if (sim == nullptr) {
             printf("仿真器 [ID:%d] 未初始化！\n", formation_id);
-            return;
+            return false;
         }
-        sim->switch_formation(type);
+        sim->_set_custom_id(custom_id);  // 更新当前编队的 custom_id，供切换到自定义队形时查询使用
+        bool flag = sim->switch_formation(type);
+        return flag;
     }
 
     void TurnFormation(int formation_id, double heading_rate) {
