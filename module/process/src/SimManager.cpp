@@ -183,8 +183,8 @@ namespace seven {
                                     add_node_param.pos_.lat_deg = node["pos"].get("lat_deg", 0.0).asDouble();
                                     add_node_param.pos_.lon_deg = node["pos"].get("lon_deg", 0.0).asDouble();
 
-                                    add_node_param.rel_x = node["rel_pos"].get("x_m", 0.0).asDouble();         // 自定义阵型节点相对位置
-                                    add_node_param.rel_y = node["rel_pos"].get("y_m", 0.0).asDouble();         // 自定义阵型节点相对位置
+                                    add_node_param.custom_rel_x = node["rel_pos"].get("x_m", 0.0).asDouble();         // 自定义阵型节点相对位置
+                                    add_node_param.custom_rel_y = node["rel_pos"].get("y_m", 0.0).asDouble();         // 自定义阵型节点相对位置
 
                                     nodes.push_back(add_node_param);
                                 }

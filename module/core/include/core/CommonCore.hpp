@@ -335,6 +335,8 @@ namespace seven
         double target_y;  // 目标相对北向坐标 (m)
         double last_rel_x;// 上一帧相对东向坐标
         double last_rel_y;// 上一帧相对北向坐标
+        double custom_rel_x;// 新加入相对东向坐标 (m)
+        double custom_rel_y;// 新加入相对北向坐标 (m)
         // ... 现有成员 ...
         
         int join_total_frames = 0;
@@ -348,12 +350,12 @@ namespace seven
 
         UUVNode() : id(0), speed(0.0), heading(0.0),
             rel_x(0.0), rel_y(0.0), target_x(0.0), target_y(0.0),
-            last_rel_x(0.0), last_rel_y(0.0), pos_() {}
+            last_rel_x(0.0), last_rel_y(0.0), custom_rel_x(0.0), custom_rel_y(0.0), pos_() {}
 
         UUVNode(int id_, double lon_, double lat_, double speed_, double heading_)
             : id(id_), speed(speed_), heading(heading_),
             rel_x(0.0), rel_y(0.0), target_x(0.0), target_y(0.0),
-            last_rel_x(0.0), last_rel_y(0.0), pos_() {}
+            last_rel_x(0.0), last_rel_y(0.0), custom_rel_x(0.0), custom_rel_y(0.0), pos_() {}
 
         UUVNode& operator=(const UUVNode& other) {
 
@@ -366,6 +368,8 @@ namespace seven
             this->target_y = other.target_y;
             this->last_rel_x = other.last_rel_x;
             this->last_rel_y = other.last_rel_y;
+            this->custom_rel_x = other.custom_rel_x;
+            this->custom_rel_y = other.custom_rel_y;
 
             this->is_joining = other.is_joining;
             this->join_progress = other.join_progress;

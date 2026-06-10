@@ -468,7 +468,7 @@ namespace seven {
                 if(custom_data.find(config.custom_id)->second.node_num == num)//初始化自定义队形使用
                 {
                     vector<Point2D>& temp_positions = custom_data.find(config.custom_id)->second.node_rel_positions;//包含主节点
-                    for(size_t i = 0; i < temp_positions.size(); ++i)
+                    for(size_t i = 1; i < temp_positions.size(); i++)
                     {
                         //printf("自定义队形目标点 %d: (%.1f, %.1f)\n", i+1, positions[i].first, positions[i].second);
                         positions.emplace_back(temp_positions[i].x, temp_positions[i].y);
@@ -476,10 +476,10 @@ namespace seven {
                 }
                 else//节点数不匹配(增加节点或者删除节点)
                 {
-                    for(size_t i = 0; i < nodes.size(); ++i)
+                    for(size_t i = 1; i < nodes.size(); i++)
                     {
                         //printf("自定义队形目标点 %d: (%.1f, %.1f)\n", i+1, positions[i].first, positions[i].second);
-                        positions.emplace_back(nodes[i].rel_x, nodes[i].rel_y);
+                        positions.emplace_back(nodes[i].custom_rel_x, nodes[i].custom_rel_y);
                     }
                 }
             }
@@ -743,12 +743,14 @@ namespace seven {
             return;
         }
 
-        max_id += 1;
+        
         UUVNode& main = nodes[0];
 
         for (int node_index = 0; node_index < input.size(); node_index++) {
+
+            max_id += 1;
             // 计算新节点相对于主节点的初始位置
-            double rel_x = 0.0;
+            /*double rel_x = 0.0;
             double rel_y = 0.0;
             if(config.current_formation == Formation_Type::Custom)
             {
@@ -766,8 +768,8 @@ namespace seven {
                 auto [geo_x, geo_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
                 rel_x = geo_x;
                 rel_y = geo_y;
-            }
-            //auto [rel_x, rel_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
+            }*/
+            auto [rel_x, rel_y] = _geo2enu(input[node_index].pos_.lon_deg, input[node_index].pos_.lat_deg, main.pos_.lon_deg, main.pos_.lat_deg);
 
             // 创建新节点
             UUVNode new_node;
@@ -780,20 +782,23 @@ namespace seven {
             new_node.rel_y = rel_y;
             new_node.last_rel_x = rel_x;
             new_node.last_rel_y = rel_y;
+            new_node.custom_rel_x = input[node_index].custom_rel_x;
+            new_node.custom_rel_y = input[node_index].custom_rel_y;
             new_node.is_joining = true;
             new_node.join_progress = 0.0;
             new_node.join_total_frames = input[node_index].join_total_frames;
             new_node.is_leaving = false;
 
             nodes.push_back(new_node);
+
+            printf("\n✅ 成功添加节点 ID:%d\n", max_id);
         }
         
         config.node_num = static_cast<int>(nodes.size());
 
         _set_target_formation();
         is_transition = true;
-
-        printf("\n✅ 成功添加节点 ID:%d\n", max_id);
+        
         printf("   所有节点正在重排为 %zu 节点队形...\n", nodes.size());
     }
 
@@ -1125,13 +1130,10 @@ namespace seven {
         for (auto iter = data.begin(); iter != data.end(); iter++) {
             int fid = iter->first;
 
-            printf("%d ", iter->first);
             const FormationConfig& cfg = iter->second;
 
             try {
                 UUVFormationSimulator* sim = new UUVFormationSimulator(cfg, custom_data);
-                //暂存一份阵型参数
-                //sim->_set_custom_data_list(custom_data);
 
                 g_FormationSimulators[fid] = sim;
                 printf("多编队初始化：编队 [ID:%d] 成功，节点数=%d\n", fid, cfg.node_num);
