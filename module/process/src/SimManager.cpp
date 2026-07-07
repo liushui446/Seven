@@ -107,6 +107,22 @@ namespace seven {
         //状态判断
         if (type == Cmd_Type::Transformation)
         {
+            // ====================== 实时单帧模式 ======================
+            // 客户端驱动时序：一发一算一返，不走线程池
+            if (input.get("realtime", false).asBool()) {
+                Json::Value realtime_output;
+                Transformation_Realtime(input, realtime_output);
+                result["status"] = "success";
+                result["message"] = "realtime frame processed";
+                if (realtime_output.isMember("formations")) {
+                    result["formations"] = realtime_output["formations"];
+                }
+                if (realtime_output.isMember("cross_formation_avoidance")) {
+                    result["cross_formation_avoidance"] = realtime_output["cross_formation_avoidance"];
+                }
+                return 0;
+            }
+
             if (sim_state_temp == SimState::ENDDING)
             {
                 result["status"] = "error";

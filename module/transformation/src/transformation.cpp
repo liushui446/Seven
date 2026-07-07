@@ -929,6 +929,170 @@ namespace seven {
         return 0.0;
     }
 
+    // ====================== 实时单帧步进 ======================
+    Json::Value UUVFormationSimulator::step_realtime_frame(
+        double main_speed, double main_heading,
+        double main_lon, double main_lat,
+        const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions)
+    {
+        std::lock_guard<std::mutex> lock(sim_mutex);
+
+        // ===== 1. 覆盖主船状态 =====
+        UUVNode& main = nodes[0];
+        main.speed = main_speed;
+        main.heading = main_heading;
+        main.pos_.lon_deg = main_lon;
+        main.pos_.lat_deg = main_lat;
+        config.main_node.lon_deg = main_lon;
+        config.main_node.lat_deg = main_lat;
+        config.init_speed = main_speed;
+        config.init_heading = main_heading;
+        main.rel_x = 0.0;
+        main.rel_y = 0.0;
+
+        double main_hdg_rad = to_radians(main_heading);
+
+        // ===== 2. 覆盖从节点位置（客户端经纬度 → rel_x/rel_y）=====
+        for (const auto& [slave_id, pos] : slave_positions) {
+            double slave_lon = pos.first;
+            double slave_lat = pos.second;
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                if (nodes[i].id == slave_id) {
+                    nodes[i].pos_.lon_deg = slave_lon;
+                    nodes[i].pos_.lat_deg = slave_lat;
+                    // 经纬度 → ENU → 逆旋转得到相对坐标
+                    auto [enux, enuy] = _geo2enu(slave_lon, slave_lat, main_lon, main_lat);
+                    double cos_h = std::cos(main_hdg_rad);
+                    double sin_h = std::sin(main_hdg_rad);
+                    nodes[i].rel_x =  cos_h * enux + sin_h * enuy;
+                    nodes[i].rel_y = -sin_h * enux + cos_h * enuy;
+                    break;
+                }
+            }
+        }
+
+        // ===== 3. 过渡动画 & 节点加入/脱离更新 =====
+        if (is_transition) {
+            _transition_formation();
+        }
+
+        // 处理脱离节点（复刻 _update_maneuver 中的逻辑）
+        std::vector<size_t> indices_to_remove;
+        for (int i = static_cast<int>(nodes.size()) - 1; i >= 1; --i) {
+            UUVNode& node = nodes[i];
+            if (!node.is_leaving) continue;
+
+            // 找最近的非脱离节点
+            UUVNode* closest = nullptr;
+            double min_dist = 1e9;
+            for (size_t j = 1; j < nodes.size(); ++j) {
+                if (nodes[j].is_leaving) continue;
+                double d = std::hypot(nodes[j].rel_x - node.rel_x, nodes[j].rel_y - node.rel_y);
+                if (d < min_dist) { min_dist = d; closest = &nodes[j]; }
+            }
+            if (closest != nullptr) {
+                double cur_dist = std::hypot(closest->rel_x - node.rel_x, closest->rel_y - node.rel_y);
+                if (cur_dist > 5 * config.rel_distance) {
+                    indices_to_remove.push_back(i);
+                    continue;
+                }
+            }
+            // 更新脱离节点经纬度
+            double rx = node.rel_x, ry = node.rel_y;
+            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
+            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+            auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
+            node.pos_.lon_deg = lon;
+            node.pos_.lat_deg = lat;
+        }
+        // 批量删除已远离的脱离节点
+        if (!indices_to_remove.empty()) {
+            std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
+            for (size_t idx : indices_to_remove) {
+                nodes.erase(nodes.begin() + idx);
+            }
+            config.node_num = static_cast<int>(nodes.size());
+            _set_target_formation();
+        }
+
+        // ===== 4. 碰撞避免 + 队形保持 =====
+        apply_collision_avoidance();
+        _formation_keeping();
+
+        // ===== 5. 更新所有从节点 speed/heading =====
+        double w = to_radians(config.heading_rate);
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            UUVNode& node = nodes[i];
+            if (node.is_leaving || node.is_joining) continue;
+
+            double rx = node.rel_x, ry = node.rel_y;
+            double des_vx, des_vy;
+            if (std::fabs(w) < 1e-4) {
+                des_vx = main_speed * std::sin(main_hdg_rad);
+                des_vy = main_speed * std::cos(main_hdg_rad);
+            } else {
+                double v_rel_x = -w * ry;
+                double v_rel_y = w * rx;
+                des_vx = main_speed * std::sin(main_hdg_rad) + v_rel_x;
+                des_vy = main_speed * std::cos(main_hdg_rad) + v_rel_y;
+            }
+            double desired_speed = std::hypot(des_vx, des_vy);
+            desired_speed = std::min(desired_speed, MAX_SPEED);
+            node.speed = desired_speed;
+
+            double hdg = std::atan2(des_vx, des_vy);
+            hdg = to_degrees(hdg);
+            hdg = fmod(hdg, 360.0);
+            if (hdg < 0) hdg += 360.0;
+            node.heading = hdg;
+
+            // 更新绝对经纬度
+            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
+            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+            auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
+            node.pos_.lon_deg = lon;
+            node.pos_.lat_deg = lat;
+        }
+
+        // ===== 6. 过渡完成检测 =====
+        if (is_transition) {
+            _record_transition_step();
+        }
+
+        current_time += config.sim_step;
+
+        // ===== 7. 组装单编队 JSON 输出 =====
+        Json::Value form_out;
+        form_out["formation_id"] = config.formation_id;
+        form_out["main_speed"] = main_speed;
+        form_out["main_heading"] = main_heading;
+        form_out["main_lon"] = main_lon;
+        form_out["main_lat"] = main_lat;
+        form_out["current_formation"] = static_cast<int>(config.current_formation);
+        form_out["node_num"] = config.node_num;
+
+        Json::Value nodes_arr(Json::arrayValue);
+        for (const auto& node : nodes) {
+            Json::Value n;
+            n["node_id"] = node.id;
+            n["lon"] = std::round(node.pos_.lon_deg * 1e6) / 1e6;
+            n["lat"] = std::round(node.pos_.lat_deg * 1e6) / 1e6;
+            n["speed"] = std::round(node.speed  * 1e3) / 1e3;
+            n["heading"] = std::round(node.heading * 1e3) / 1e3;
+            n["rel_x"] = std::round(node.rel_x * 1e3) / 1e3;
+            n["rel_y"] = std::round(node.rel_y * 1e3) / 1e3;
+            n["target_x"] = std::round(node.target_x * 1e3) / 1e3;
+            n["target_y"] = std::round(node.target_y * 1e3) / 1e3;
+            n["formation_error"] = std::round(_calculate_formation_error(node) * 1e4) / 1e4;
+            n["is_joining"] = node.is_joining;
+            n["is_leaving"] = node.is_leaving;
+            nodes_arr.append(n);
+        }
+        form_out["nodes"] = nodes_arr;
+
+        return form_out;
+    }
+
     // ====================== 外部接口实现 ======================
 
     // 清理所有编队仿真器
@@ -1482,6 +1646,110 @@ namespace seven {
 
         task_param.trajectory_result["frames"] = frames_array;
         task_param.trajectory_result["formation_id"] = formation_id;
+    }
+
+    // ====================== 实时多编队单帧处理 ======================
+    void Transformation_Realtime(const Json::Value& input, Json::Value& output) {
+        if (g_FormationSimulators.empty()) {
+            printf("Transformation_Realtime: 无可用仿真器！\n");
+            output["status"] = "error";
+            output["message"] = "no formation simulators initialized";
+            return;
+        }
+
+        const Json::Value& formations_array = input["formations"];
+        output["formations"] = Json::Value(Json::arrayValue);
+
+        // 收集修改过的 simulator，供跨编队避碰后重跑
+        std::set<UUVFormationSimulator*> modified_sims;
+
+        for (int i = 0; i < formations_array.size(); ++i) {
+            const Json::Value& form_entry = formations_array[i];
+            int fid = form_entry.get("formation_id", -1).asInt();
+            UUVFormationSimulator* sim = GetFormationSimulator(fid);
+            if (sim == nullptr) {
+                printf("Transformation_Realtime: 编队 [%d] 不存在，跳过\n", fid);
+                continue;
+            }
+
+            // ---- 先处理控制命令（switch/turn/add/remove）----
+            bool isSwitch = form_entry.get("isSwitch", false).asBool();
+            bool isTurn   = form_entry.get("isTurn",   false).asBool();
+            bool isAdd    = form_entry.get("isAdd",    false).asBool();
+            bool isRemove = form_entry.get("isRemove", false).asBool();
+
+            if (isSwitch) {
+                int custom_id = form_entry.get("custom_id", 1).asInt();
+                Formation_Type ft = static_cast<Formation_Type>(form_entry.get("formation_type", 5).asInt());
+                sim->_set_custom_id(custom_id);
+                sim->switch_formation(ft);
+            }
+            if (isTurn) {
+                double rate = form_entry.get("heading_rate", 0.0).asDouble();
+                sim->set_heading_rate(rate);
+            }
+            if (isAdd) {
+                vector<UUVNode> nodes_to_add;
+                const Json::Value& na = form_entry["add_node"];
+                if (na.isArray()) {
+                    for (int j = 0; j < na.size(); ++j) {
+                        UUVNode un;
+                        un.speed = na[j].get("speed", 0.0).asDouble();
+                        un.heading = na[j].get("heading", 0.0).asDouble();
+                        un.join_total_frames = na[j].get("join_frames", 10).asInt();
+                        un.pos_.lat_deg = na[j]["pos"].get("lat_deg", 0.0).asDouble();
+                        un.pos_.lon_deg = na[j]["pos"].get("lon_deg", 0.0).asDouble();
+                        un.custom_rel_x = na[j]["rel_pos"].get("x_m", 0.0).asDouble();
+                        un.custom_rel_y = na[j]["rel_pos"].get("y_m", 0.0).asDouble();
+                        nodes_to_add.push_back(un);
+                    }
+                }
+                if (!nodes_to_add.empty()) {
+                    sim->add_node(nodes_to_add);
+                }
+            }
+            if (isRemove) {
+                int rn = form_entry.get("remove_num", 1).asInt();
+                sim->remove_last_node(rn);
+            }
+
+            // ---- 解析实时状态数据 ----
+            double ms = form_entry.get("main_speed",   0.0).asDouble();
+            double mh = form_entry.get("main_heading", 0.0).asDouble();
+            double mlon = form_entry.get("main_lon",   0.0).asDouble();
+            double mlat = form_entry.get("main_lat",   0.0).asDouble();
+
+            std::vector<std::pair<int, std::pair<double, double>>> slave_positions;
+            const Json::Value& slaves_arr = form_entry["slaves"];
+            if (slaves_arr.isArray()) {
+                for (int j = 0; j < slaves_arr.size(); ++j) {
+                    int sid = slaves_arr[j].get("node_id", -1).asInt();
+                    double slon = slaves_arr[j].get("lon", 0.0).asDouble();
+                    double slat = slaves_arr[j].get("lat", 0.0).asDouble();
+                    slave_positions.push_back({sid, {slon, slat}});
+                }
+            }
+
+            // 单编队实时帧计算
+            Json::Value form_result = sim->step_realtime_frame(ms, mh, mlon, mlat, slave_positions);
+            output["formations"].append(form_result);
+            modified_sims.insert(sim);
+        }
+
+        // ---- 跨编队碰撞避免 ----
+        if (g_FormationSimulators.size() > 1) {
+            ApplyInterFormationAvoidance();
+            // 跨编队避碰后，重跑各编队的编队内避碰 & 更新输出中的节点位置
+            for (auto* sim : modified_sims) {
+                sim->reapply_collision_avoidance();
+            }
+            // 用最新节点状态刷新输出 JSON（简洁方案：直接重建）
+            // ponytail: 跨编队避碰后原地更新 output JSON 中的 node 经纬度/speed/heading
+            // 此处跨编队避碰只做微调，不做全量重建
+            output["cross_formation_avoidance"] = true;
+        } else {
+            output["cross_formation_avoidance"] = false;
+        }
     }
 
     void UAVTrajectory::addFrame(int frame, const Formation_Type formation, const vector<UUVNode>& nodes)

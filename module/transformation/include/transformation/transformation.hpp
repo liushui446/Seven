@@ -149,6 +149,12 @@ namespace seven{
 
         // 获取主节点航向（弧度）
         double get_main_heading_rad() const;
+
+        // 实时单帧步进：接收外部主船状态和从节点位置，运行避碰+队形保持，返回单编队结果JSON
+        Json::Value step_realtime_frame(
+            double main_speed, double main_heading,
+            double main_lon, double main_lat,
+            const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions);
     };
 
     // ====================== 多编队仿真器管理 ======================
@@ -194,6 +200,9 @@ namespace seven{
 
     // 删除末尾节点（指定编队ID）
     void SEVEN_EXPORTS RemoveLastNode(int formation_id, int num);
+
+    // 实时多编队单帧处理（同步，不走线程池）
+    void SEVEN_EXPORTS Transformation_Realtime(const Json::Value& input, Json::Value& output);
 
 }
 #endif
