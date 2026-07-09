@@ -97,8 +97,8 @@ PIPE_NAME_SERVER_TO_CLIENT = r"\\.\pipe\ServerToClientPipe"  # 监听结果
 
 # 编队类型名称映射
 FORMATION_TYPE_NAMES = {
-    1: "楔形", 2: "纵队", 3: "横队",
-    4: "菱形", 5: "三角形", 6: "圆形"
+    1: "楔形", 2: "三角形", 3: "圆形",
+    4: "菱形", 5: "直线", 6: "自定义"
 }
 
 # ========================= 工具函数 =========================
@@ -111,16 +111,28 @@ def geo_to_relative_meters(lon: float, lat: float, center_lon: float, center_lat
 
 
 def _get_formation_offsets(formation_type, num_nodes, interval=10.0):
-    """根据编队类型计算各节点相对于编队中心的理想偏移"""
+    """根据编队类型计算各节点相对于编队中心的理想偏移（与服务端Formation_Type对齐）"""
     offsets = []
-    if formation_type == 2:  # 纵队
+    if formation_type == 1:  # Rectangle 楔形
+        row = 0
+        while len(offsets) < num_nodes:
+            for j in range(-row, row + 1):
+                if len(offsets) < num_nodes:
+                    offsets.append((j * interval, -row * interval))
+            row += 1
+    elif formation_type == 2:  # Triangle 三角形
+        row = 0
+        while len(offsets) < num_nodes:
+            for j in range(-row, row + 1):
+                if len(offsets) < num_nodes:
+                    offsets.append((j * interval, -row * interval))
+            row += 1
+    elif formation_type == 3:  # Circle 圆形
+        r = interval * 2
         for i in range(num_nodes):
-            offsets.append((0.0, -i * interval))
-    elif formation_type == 3:  # 横队
-        half = (num_nodes - 1) / 2.0
-        for i in range(num_nodes):
-            offsets.append(((i - half) * interval, 0.0))
-    elif formation_type == 4:  # 菱形
+            angle = 2 * np.pi * i / num_nodes
+            offsets.append((r * np.sin(angle), r * np.cos(angle)))
+    elif formation_type == 4:  # Diamond 菱形
         offsets.append((0.0, 0.0))
         row = 1
         while len(offsets) < num_nodes:
@@ -128,14 +140,10 @@ def _get_formation_offsets(formation_type, num_nodes, interval=10.0):
                 if len(offsets) < num_nodes:
                     offsets.append((j * interval, -row * interval))
             row += 1
-    elif formation_type == 1 or formation_type == 5:  # 楔形/三角形
-        row = 0
-        while len(offsets) < num_nodes:
-            for j in range(-row, row + 1):
-                if len(offsets) < num_nodes:
-                    offsets.append((j * interval, -row * interval))
-            row += 1
-    else:  # 默认：纵队
+    elif formation_type == 5:  # Line 直线/纵队
+        for i in range(num_nodes):
+            offsets.append((0.0, -i * interval))
+    else:  # 6=Custom 或未知，默认直线
         for i in range(num_nodes):
             offsets.append((0.0, -i * interval))
     return offsets[:num_nodes]
