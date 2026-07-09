@@ -13,9 +13,19 @@ import threading
 import queue
 import os
 
-# 中文字体设置
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+# 中文字体设置（跨平台：Linux用文泉驿/Noto，Windows用微软雅黑）
+import platform
+if platform.system() == 'Windows':
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+else:
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC',
+                                        'DejaVu Sans', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
+# 抑制 matplotlib 对终端 CJK 字符的字体警告
+import logging
+import warnings
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+warnings.filterwarnings('ignore', message='Glyph.*missing from current font')
 
 # 全局变量
 is_paused = False
