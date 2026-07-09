@@ -1107,7 +1107,7 @@ namespace seven {
     }
 
     // ====================== 跨编队全局碰撞避免 ======================
-    void ApplyInterFormationAvoidance() {
+    void ApplyInterFormationAvoidance(bool skip_leaders) {
         if (g_FormationSimulators.size() <= 1) return;
 
         // 取第一个编队的主节点为全局 ENU 参考原点
@@ -1134,6 +1134,8 @@ namespace seven {
             if (sim == nullptr) continue;
             const auto& nodes = sim->get_nodes();
             for (size_t i = 0; i < nodes.size(); ++i) {
+                // 实时模式下跳过主船（客户端控制），批次模式主船参与避碰
+                if (skip_leaders && i == 0) continue;
                 const UUVNode& node = nodes[i];
                 double lr = to_radians(node.pos_.lon_deg);
                 double la = to_radians(node.pos_.lat_deg);
@@ -1737,9 +1739,9 @@ namespace seven {
             modified_sims.insert(sim);
         }
 
-        // ---- 跨编队碰撞避免 ----
+        // ---- 跨编队碰撞避免（跳过主船，客户端控制）----
         if (g_FormationSimulators.size() > 1) {
-            ApplyInterFormationAvoidance();
+            ApplyInterFormationAvoidance(true);  // skip_leaders=true：仅从节点参与跨编队避碰
             // 跨编队避碰后，重跑各编队的编队内避碰 & 更新输出中的节点位置
             for (auto* sim : modified_sims) {
                 sim->reapply_collision_avoidance();

@@ -173,8 +173,8 @@ namespace seven{
     // 清理所有编队仿真器
     void SEVEN_EXPORTS Cleanup_All_Formations();
 
-    // 跨编队全局碰撞避免
-    void ApplyInterFormationAvoidance();
+    // 跨编队全局碰撞避免（skip_leaders=true 跳过主船，用于客户端驱动模式）
+    void ApplyInterFormationAvoidance(bool skip_leaders = false);
 
     // ====================== 外部接口声明 ======================
     // 初始化单个编队（兼容旧接口，内部使用 formation_id = 0）
