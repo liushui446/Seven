@@ -1,12 +1,14 @@
 #pragma once
 
-#include <ppl.h>
+#ifdef _WIN32
+    #include <ppl.h>
+    #include <windows.h>
+    #include <winnt.h>
+#endif
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <windows.h>
-#include <winnt.h>
 
 #include "core/CommonCore.hpp"
 #include "process/AtomicArray.hpp"
