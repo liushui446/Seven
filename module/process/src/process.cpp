@@ -25,6 +25,7 @@
     #include <sys/socket.h>
     #include <sys/un.h>
     #include <csignal>
+    #include <unistd.h>   // close, unlink
 #endif
 
 using namespace Json;
