@@ -1674,7 +1674,8 @@ namespace seven {
 
             // ---- 先处理控制命令（switch/turn/add/remove）----
             bool isSwitch = form_entry.get("isSwitch", false).asBool();
-            bool isTurn   = form_entry.get("isTurn",   false).asBool();
+            //bool isTurn   = form_entry.get("isTurn",   false).asBool();
+            bool isTurn   = false;
             bool isAdd    = form_entry.get("isAdd",    false).asBool();
             bool isRemove = form_entry.get("isRemove", false).asBool();
 
