@@ -1,0 +1,47 @@
+{
+    "cmd": 3,
+    "sim_type": 1,
+    "formations": [
+        {
+            "formation_id": 1,
+            "custom_id": 1,
+            "pos_lon": 120.000000,
+            "pos_lat": 30.000000,
+            "num_uavs": 6,
+            "init_heading": 135.0,
+            "init_speed": 2.0,
+            "heading_rate": 1.0,
+            "interval": 10.0,
+            "collision_radius": 4.0,
+            "formation_type": 6,
+            "return_frames": 800
+        }
+    ],
+    "custom_formations": [
+        {
+            "custom_id": 1,
+            "num_uavs": 6,
+            "custom_points": [
+                {"rel_x": 0.0, "rel_y": 0.0},
+                {"rel_x": 10.0, "rel_y": 10.0},
+                {"rel_x": 10.0, "rel_y": 0.0},
+                {"rel_x": 10.0, "rel_y": -10.0},
+                {"rel_x": 0.0, "rel_y": -10.0},
+                {"rel_x": 0.0, "rel_y": 10.0}
+            ]
+        },
+        {
+            "custom_id": 2,
+            "num_uavs": 7,
+            "custom_points": [
+                {"rel_x": 0.0, "rel_y": 0.0},
+                {"rel_x": 10.0, "rel_y": 10.0},
+                {"rel_x": 10.0, "rel_y": 0.0},
+                {"rel_x": 10.0, "rel_y": -10.0},
+                {"rel_x": 0.0, "rel_y": -10.0},
+                {"rel_x": 0.0, "rel_y": 10.0},
+                {"rel_x": -10.0, "rel_y": 0.0}
+            ]
+        }
+    ]
+}

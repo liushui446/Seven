@@ -64,6 +64,10 @@ realtime_frame_count = 0        # 实时帧计数器
 realtime_dt = 0.1               # 仿真步长（秒）
 realtime_lock = threading.Lock()
 pending_commands = {}           # {formation_id: dict} 待发送的控制命令（switch/turn/add/remove）
+realtime_trajectory = {}        # 轨迹累积缓存：{fid: [frame_data, ...]}，定期落盘
+realtime_save_interval = 400    # 每N帧自动保存一次轨迹JSON
+realtime_output_dir = None      # 实时轨迹输出目录（None=脚本目录/realtime_output）
+realtime_save_counter = 1       # 文件名递增序号
 
 # 脚本所在目录（解决工作目录与脚本目录不一致的问题）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -265,8 +269,8 @@ def send_pipe_command_raw(cmd: dict):
 
 
 def cache_realtime_response(result):
-    """将实时响应缓存到 formation_data 供可视化使用"""
-    global realtime_frame_count, max_cached_frame
+    """将实时响应缓存到 formation_data（可视化）和 realtime_trajectory（落盘）"""
+    global realtime_frame_count, max_cached_frame, realtime_trajectory
     if not result or result.get("status") != "success":
         return
     with viz_lock:
@@ -277,11 +281,48 @@ def cache_realtime_response(result):
                 "formation_type": form_entry.get("current_formation", 1),
                 "nodes": form_entry.get("nodes", [])
             }
+            # 可视化缓存
             if fid not in formation_data:
                 formation_data[fid] = {}
             formation_data[fid][realtime_frame_count] = frame_data
+            # 轨迹落盘缓存
+            if fid not in realtime_trajectory:
+                realtime_trajectory[fid] = []
+            realtime_trajectory[fid].append(frame_data)
         if realtime_frame_count > max_cached_frame:
             max_cached_frame = realtime_frame_count
+
+
+def flush_realtime_trajectory():
+    """将累积的轨迹数据写入 JSON 文件（格式与批次模式 result_*.json 一致）"""
+    global realtime_trajectory, realtime_output_dir, realtime_save_counter
+    if not realtime_trajectory:
+        return
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    out_dir = realtime_output_dir or os.path.join(SCRIPT_DIR, "realtime_output")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # 批次风格：单文件含所有编队 {"formations": {"1": [...], "2": [...]}}
+    filename = os.path.join(out_dir, f"result_{timestamp}_+ {realtime_save_counter}.json")
+    formations_obj = {}
+    total_frames = 0
+    for fid_str in sorted(realtime_trajectory.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+        frames = realtime_trajectory[fid_str]
+        if not frames:
+            continue
+        formations_obj[fid_str] = frames
+        total_frames += len(frames)
+
+    output = {"formations": formations_obj}
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+
+    frame_ids = [str(f["frame_id"]) for f in next(iter(formations_obj.values()))]
+    print(f"[轨迹] {len(formations_obj)}编队 {total_frames}帧 "
+          f"(帧#{min(frame_ids)}-#{max(frame_ids)}) → {filename}")
+
+    realtime_trajectory.clear()
+    realtime_save_counter += 1
 
 
 def realtime_loop():
@@ -322,6 +363,10 @@ def realtime_loop():
 
             realtime_frame_count += 1
             cache_realtime_response(result)
+
+            # 每 realtime_save_interval 帧自动落盘
+            if realtime_frame_count % realtime_save_interval == 0:
+                flush_realtime_trajectory()
 
             # 每 50 帧打印一次状态
             if realtime_frame_count % 50 == 0:
@@ -1212,6 +1257,8 @@ def load_cmd_from_file(file_name: str) -> dict or None:
 # ========================= 主函数 =========================
 def main():
     global is_listening, hPipe_send, hPipe_listen, playback_thread, is_playing, current_playback_frame, max_cached_frame
+    global is_realtime_running, realtime_frame_count, realtime_dt, formation_states, pending_commands, playback_speed
+    global realtime_trajectory, realtime_save_interval, realtime_output_dir, realtime_save_counter
     exe_path = r"F:\Seven\build\bin\Debug\app.exe"
 
     # 初始化两个纯同步管道
@@ -1248,7 +1295,7 @@ def main():
     print("rswitch <fid> <type>：队形切换 | rturn <fid> <rate>：转向")
     print("radd <fid>：添加节点 | rremove <fid> <n>：移除末尾n个节点")
     print("rspeed <fid> <v>：修改主船速度 | rheading <fid> <deg>：修改航向")
-    print("rinfo：查看所有编队实时状态")
+    print("rinfo：查看所有编队实时状态 | save：手动保存轨迹JSON")
     print("====================\n")
 
     # ====== 自动启动编队实时监控窗口 ======
@@ -1333,7 +1380,14 @@ def main():
 
             if user_input.lower() == 'rstop':
                 is_realtime_running = False
-                print("[实时] 已发送停止信号，等待循环退出...")
+                time.sleep(0.2)  # 等循环退出
+                flush_realtime_trajectory()
+                print("[实时] 已停止，剩余轨迹已落盘")
+                continue
+
+            if user_input.lower() == 'save':
+                flush_realtime_trajectory()
+                print("[实时] 轨迹已手动保存")
                 continue
 
             if user_input.lower() == 'rinfo':
