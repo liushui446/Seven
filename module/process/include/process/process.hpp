@@ -2,20 +2,35 @@
 #define PROCESS_HPP
 
 #include "core/CommonCore.hpp"
-#include <windows.h>
+#ifdef _WIN32
+	#include <windows.h>
+#endif
 
 namespace seven {
 
-	struct CalcTaskParam {
-		HANDLE hPipe = nullptr;
-		Json::Value input;
-		Json::Value trajectory_result;
-		std::atomic<int> max_frames;
-		std::atomic<int> run_frames;
-		std::atomic<int> return_frames;
-		std::atomic<bool> task_finished{ false };
-		vector<InputPlatParam> serveral_plat;
-	};
+	#ifdef _WIN32
+		struct CalcTaskParam {
+			HANDLE hPipe = nullptr;
+			Json::Value input;
+			Json::Value trajectory_result;
+			std::atomic<int> max_frames;
+			std::atomic<int> run_frames;
+			std::atomic<int> return_frames;
+			std::atomic<bool> task_finished{ false };
+			vector<InputPlatParam> serveral_plat;
+		};
+	#else
+			struct CalcTaskParam {
+			HANDLE hPipe = 0;
+			Json::Value input;
+			Json::Value trajectory_result;
+			std::atomic<int> max_frames;
+			std::atomic<int> run_frames;
+			std::atomic<int> return_frames;
+			std::atomic<bool> task_finished{ false };
+			vector<InputPlatParam> serveral_plat;
+		};
+	#endif
 
 	string formatDouble(double value, int precision);
 
