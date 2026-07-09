@@ -2,7 +2,10 @@
 #define SIMMANAGER_HPP
 
 #include "core/CommonCore.hpp"
-#include <windows.h>
+#ifdef _WIN32
+    #include <windows.h>
+#endif
+
 #include "CalcThread.hpp"
 
 namespace seven {
