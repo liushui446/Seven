@@ -154,7 +154,8 @@ namespace seven{
         Json::Value step_realtime_frame(
             double main_speed, double main_heading,
             double main_lon, double main_lat,
-            const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions);
+            const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions,
+            double form_up_speed = 0.0);
     };
 
     // ====================== 多编队仿真器管理 ======================

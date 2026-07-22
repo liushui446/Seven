@@ -173,6 +173,7 @@ class FormationState:
         self.collision_radius = float(config.get("collision_radius", 4.0))
         self.current_formation = config.get("formation_type", 1)
         self.node_num = config.get("num_uavs", 5)
+        self.form_up_speed = 0.0   # 靠拢速度，0=正常模式
         # 从节点状态 {node_id: {"lon","lat","speed","heading","rel_x","rel_y"}}
         self.slaves = {}
         self._init_slaves()
@@ -254,6 +255,7 @@ class FormationState:
             "isAdd": False, "isRemove": False,
             "formation_type": 0, "heading_rate": 0.0,
             "custom_id": 0, "add_node": [], "remove_num": 0,
+            "form_up_speed": self.form_up_speed,
         }
         if commands:
             entry.update(commands)
@@ -1160,7 +1162,7 @@ def main():
     print("rswitch <fid> <type>：队形切换 | rturn <fid> <rate>：转向")
     print("radd <fid>：添加节点 | rremove <fid> <n>：移除末尾n个节点")
     print("rspeed <fid> <v>：修改主船速度 | rheading <fid> <deg>：修改航向")
-    print("rinfo：查看所有编队实时状态 | save：手动保存轨迹JSON")
+    print("rformup <fid> <v>：靠拢编队(0=关) | rinfo：查看状态 | save：保存轨迹")
     print("====================\n")
 
     # ====== 自动启动编队实时监控窗口 ======
@@ -1376,6 +1378,25 @@ def main():
                 with realtime_lock:
                     formation_states[fid].main_heading = hdg
                 print(f"[实时] 编队{fid} 主船航向 → {hdg}°")
+                continue
+
+            if user_input.lower().startswith('rformup '):
+                parts = user_input.split()
+                if len(parts) < 3:
+                    print("用法: rformup <formation_id> <speed_mps>")
+                    print("  speed=0 关闭靠拢模式，恢复正常避碰+队形保持")
+                    continue
+                fid = int(parts[1])
+                spd = float(parts[2])
+                if fid not in formation_states:
+                    print(f"编队{fid}不存在！可用: {list(formation_states.keys())}")
+                    continue
+                with realtime_lock:
+                    formation_states[fid].form_up_speed = spd
+                if spd > 0:
+                    print(f"[实时] 编队{fid} 靠拢模式开启 speed={spd}m/s (靠近<20m自动减速)")
+                else:
+                    print(f"[实时] 编队{fid} 靠拢模式关闭，恢复正常")
                 continue
 
             # ===================== 可视化命令 =====================

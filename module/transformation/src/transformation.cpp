@@ -933,7 +933,8 @@ namespace seven {
     Json::Value UUVFormationSimulator::step_realtime_frame(
         double main_speed, double main_heading,
         double main_lon, double main_lat,
-        const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions)
+        const std::vector<std::pair<int, std::pair<double, double>>>& slave_positions,
+        double form_up_speed)
     {
         std::lock_guard<std::mutex> lock(sim_mutex);
 
@@ -1015,38 +1016,106 @@ namespace seven {
             _set_target_formation();
         }
 
-        // ===== 4. 碰撞避免 + 队形保持 =====
-        apply_collision_avoidance();
-        _formation_keeping();
+        // ===== 4. 靠拢编队 或 碰撞避免 + 队形保持 =====
+        bool all_slaves_close = true;
+        if (form_up_speed > 0.0) {
+            // 靠拢模式：从节点以 form_up_speed 直线冲向目标，靠近后减速
+            double dt = config.sim_step;
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                UUVNode& node = nodes[i];
+                if (node.is_leaving || node.is_joining) continue;
 
-        // ===== 5. 更新所有从节点 speed/heading =====
-        double w = to_radians(config.heading_rate);
+                double dx = node.target_x - node.rel_x;
+                double dy = node.target_y - node.rel_y;
+                double dist = std::hypot(dx, dy);
+
+                if (dist < 1.0) {
+                    // 已到位，与目标对齐
+                    node.rel_x = node.target_x;
+                    node.rel_y = node.target_y;
+                } else {
+                    all_slaves_close = false;
+                    // 靠近到 30m 内线性减速，最低减到主船当前航速
+                    double approach_speed = form_up_speed;
+                    if (dist < 30.0) {
+                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / 30.0);
+                        if (approach_speed < main_speed) approach_speed = main_speed;
+                    }
+                    double step = approach_speed * dt;
+                    if (step > dist) step = dist;
+                    node.rel_x += (dx / dist) * step;
+                    node.rel_y += (dy / dist) * step;
+                }
+            }
+            // 靠拢模式下从节点速度即为靠拢速度，航向指向目标
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                UUVNode& node = nodes[i];
+                if (node.is_leaving || node.is_joining) continue;
+
+                double dx = node.target_x - node.rel_x;
+                double dy = node.target_y - node.rel_y;
+                double dist = std::hypot(dx, dy);
+                if (dist < 0.03) {
+                    node.speed = main_speed;
+                    node.heading = main_heading;
+                } else {
+                    double approach_speed = form_up_speed;
+                    if (dist < 30.0) {
+                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / 30.0);
+                        if (approach_speed < main_speed) approach_speed = main_speed;
+                    }
+                    node.speed = approach_speed;
+                    // 航向: 指向目标（在 ENU 坐标系中表达，再转回编队坐标系）
+                    double target_enux = dx * cos(main_hdg_rad) - dy * sin(main_hdg_rad);
+                    double target_enuy = dx * sin(main_hdg_rad) + dy * cos(main_hdg_rad);
+                    double hdg = std::atan2(target_enux, target_enuy);
+                    hdg = to_degrees(hdg);
+                    hdg = fmod(hdg, 360.0);
+                    if (hdg < 0) hdg += 360.0;
+                    node.heading = hdg;
+                }
+            }
+        } else {
+            // 正常模式：碰撞避免 + 队形保持
+            apply_collision_avoidance();
+            _formation_keeping();
+        }
+
+        // ===== 5. 更新所有从节点 speed/heading（正常模式用运动学公式）=====
+        if (form_up_speed <= 0.0) {
+            double w = to_radians(config.heading_rate);
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                UUVNode& node = nodes[i];
+                if (node.is_leaving || node.is_joining) continue;
+
+                double rx = node.rel_x, ry = node.rel_y;
+                double des_vx, des_vy;
+                if (std::fabs(w) < 1e-4) {
+                    des_vx = main_speed * std::sin(main_hdg_rad);
+                    des_vy = main_speed * std::cos(main_hdg_rad);
+                } else {
+                    double v_rel_x = -w * ry;
+                    double v_rel_y = w * rx;
+                    des_vx = main_speed * std::sin(main_hdg_rad) + v_rel_x;
+                    des_vy = main_speed * std::cos(main_hdg_rad) + v_rel_y;
+                }
+                double desired_speed = std::hypot(des_vx, des_vy);
+                desired_speed = std::min(desired_speed, MAX_SPEED);
+                node.speed = desired_speed;
+
+                double hdg = std::atan2(des_vx, des_vy);
+                hdg = to_degrees(hdg);
+                hdg = fmod(hdg, 360.0);
+                if (hdg < 0) hdg += 360.0;
+                node.heading = hdg;
+            }
+        }
+
+        // 更新所有从节点绝对经纬度
         for (size_t i = 1; i < nodes.size(); ++i) {
             UUVNode& node = nodes[i];
             if (node.is_leaving || node.is_joining) continue;
-
             double rx = node.rel_x, ry = node.rel_y;
-            double des_vx, des_vy;
-            if (std::fabs(w) < 1e-4) {
-                des_vx = main_speed * std::sin(main_hdg_rad);
-                des_vy = main_speed * std::cos(main_hdg_rad);
-            } else {
-                double v_rel_x = -w * ry;
-                double v_rel_y = w * rx;
-                des_vx = main_speed * std::sin(main_hdg_rad) + v_rel_x;
-                des_vy = main_speed * std::cos(main_hdg_rad) + v_rel_y;
-            }
-            double desired_speed = std::hypot(des_vx, des_vy);
-            desired_speed = std::min(desired_speed, MAX_SPEED);
-            node.speed = desired_speed;
-
-            double hdg = std::atan2(des_vx, des_vy);
-            hdg = to_degrees(hdg);
-            hdg = fmod(hdg, 360.0);
-            if (hdg < 0) hdg += 360.0;
-            node.heading = hdg;
-
-            // 更新绝对经纬度
             double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
             double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
             auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
@@ -1070,6 +1139,7 @@ namespace seven {
         form_out["main_lat"] = main_lat;
         form_out["current_formation"] = static_cast<int>(config.current_formation);
         form_out["node_num"] = config.node_num;
+        form_out["form_up_complete"] = (form_up_speed > 0.0) ? all_slaves_close : true;
 
         Json::Value nodes_arr(Json::arrayValue);
         for (const auto& node : nodes) {
@@ -1721,6 +1791,7 @@ namespace seven {
             double mh = form_entry.get("main_heading", 0.0).asDouble();
             double mlon = form_entry.get("main_lon",   0.0).asDouble();
             double mlat = form_entry.get("main_lat",   0.0).asDouble();
+            double form_up_spd = form_entry.get("form_up_speed", 0.0).asDouble();
 
             std::vector<std::pair<int, std::pair<double, double>>> slave_positions;
             const Json::Value& slaves_arr = form_entry["slaves"];
@@ -1734,7 +1805,7 @@ namespace seven {
             }
 
             // 单编队实时帧计算
-            Json::Value form_result = sim->step_realtime_frame(ms, mh, mlon, mlat, slave_positions);
+            Json::Value form_result = sim->step_realtime_frame(ms, mh, mlon, mlat, slave_positions, form_up_spd);
             output["formations"].append(form_result);
             modified_sims.insert(sim);
         }
