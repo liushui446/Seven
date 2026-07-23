@@ -1791,7 +1791,7 @@ namespace seven {
             double mh = form_entry.get("main_heading", 0.0).asDouble();
             double mlon = form_entry.get("main_lon",   0.0).asDouble();
             double mlat = form_entry.get("main_lat",   0.0).asDouble();
-            double form_up_spd = form_entry.get("form_up_speed", 0.0).asDouble();
+            double form_up_spd = form_entry.get("form_up_speed", 5.0).asDouble();
 
             std::vector<std::pair<int, std::pair<double, double>>> slave_positions;
             const Json::Value& slaves_arr = form_entry["slaves"];
