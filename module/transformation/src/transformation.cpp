@@ -1020,7 +1020,13 @@ namespace seven {
         bool all_slaves_close = true;
         if (form_up_speed > 0.0) {
             // 靠拢模式：从节点以 form_up_speed 直线冲向目标，靠近后减速
+            // 减速区 = form_up_speed × 5s，到位阈值 = form_up_speed × 0.4s，跟速度自适应
             double dt = config.sim_step;
+            double slowdown_zone = form_up_speed * 5.0;     // 5秒×速度 = 减速距离
+            double snap_zone     = form_up_speed * 0.4;     // 0.4秒×速度 = 到位圈半径
+            if (slowdown_zone < 30.0) slowdown_zone = 30.0; // 最低 30m
+            if (snap_zone < 2.0)     snap_zone = 2.0;       // 最低 2m
+
             for (size_t i = 1; i < nodes.size(); ++i) {
                 UUVNode& node = nodes[i];
                 if (node.is_leaving || node.is_joining) continue;
@@ -1029,16 +1035,14 @@ namespace seven {
                 double dy = node.target_y - node.rel_y;
                 double dist = std::hypot(dx, dy);
 
-                if (dist < 1.0) {
-                    // 已到位，与目标对齐
+                if (dist < snap_zone) {
                     node.rel_x = node.target_x;
                     node.rel_y = node.target_y;
                 } else {
                     all_slaves_close = false;
-                    // 靠近到 30m 内线性减速，最低减到主船当前航速
                     double approach_speed = form_up_speed;
-                    if (dist < 30.0) {
-                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / 30.0);
+                    if (dist < slowdown_zone) {
+                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / slowdown_zone);
                         if (approach_speed < main_speed) approach_speed = main_speed;
                     }
                     double step = approach_speed * dt;
@@ -1055,13 +1059,13 @@ namespace seven {
                 double dx = node.target_x - node.rel_x;
                 double dy = node.target_y - node.rel_y;
                 double dist = std::hypot(dx, dy);
-                if (dist < 0.03) {
+                if (dist < snap_zone) {
                     node.speed = main_speed;
                     node.heading = main_heading;
                 } else {
                     double approach_speed = form_up_speed;
-                    if (dist < 30.0) {
-                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / 30.0);
+                    if (dist < slowdown_zone) {
+                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / slowdown_zone);
                         if (approach_speed < main_speed) approach_speed = main_speed;
                     }
                     node.speed = approach_speed;
