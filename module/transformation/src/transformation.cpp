@@ -1019,20 +1019,35 @@ namespace seven {
         // ===== 4. 靠拢编队 或 碰撞避免 + 队形保持 =====
         bool all_slaves_close = true;
         if (form_up_speed > 0.0) {
-            // 靠拢模式：在绝对 ENU 坐标系中冲向目标，主船航向变化不影响从船导航
             double dt = config.sim_step;
             double slowdown_zone = form_up_speed * 5.0;
             double snap_zone     = form_up_speed * 0.4;
             if (slowdown_zone < 30.0) slowdown_zone = 30.0;
             if (snap_zone < 2.0)     snap_zone = 2.0;
 
+            // 靠拢阶段航向滤波：平滑目标位置，限 30/frame
+            double raw_hdg = main_heading;
+            if (raw_hdg < 0.0) raw_hdg += 360.0;
+            double prev_hdg = config.init_heading;
+            if (prev_hdg < 0.0) prev_hdg += 360.0;
+            double hdg_delta = raw_hdg - prev_hdg;
+            if (hdg_delta > 180.0)  hdg_delta -= 360.0;
+            if (hdg_delta < -180.0) hdg_delta += 360.0;
+            if (hdg_delta >  30.0)  hdg_delta =  30.0;
+            if (hdg_delta < -30.0)  hdg_delta = -30.0;
+            double form_hdg = prev_hdg + hdg_delta;
+            if (form_hdg >= 360.0) form_hdg -= 360.0;
+            if (form_hdg < 0.0)    form_hdg += 360.0;
+            double form_hdg_rad = to_radians(form_hdg);
+            config.init_heading = form_hdg;
+
             for (size_t i = 1; i < nodes.size(); ++i) {
                 UUVNode& node = nodes[i];
                 if (node.is_leaving || node.is_joining) continue;
 
-                // 绝对目标位置：编队目标点旋转到大地坐标系
-                double tgt_wx = node.target_x * cos(main_hdg_rad) - node.target_y * sin(main_hdg_rad);
-                double tgt_wy = node.target_x * sin(main_hdg_rad) + node.target_y * cos(main_hdg_rad);
+                // 绝对目标位置：用滤波后航向旋转到大地坐标系
+                double tgt_wx = node.target_x * cos(form_hdg_rad) - node.target_y * sin(form_hdg_rad);
+                double tgt_wy = node.target_x * sin(form_hdg_rad) + node.target_y * cos(form_hdg_rad);
                 auto [tgt_lon, tgt_lat] = _enu2geo(tgt_wx, tgt_wy, main_lon, main_lat);
 
                 // 从船当前位置 → ENU
