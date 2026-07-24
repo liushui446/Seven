@@ -1019,25 +1019,49 @@ namespace seven {
         // ===== 4. 靠拢编队 或 碰撞避免 + 队形保持 =====
         bool all_slaves_close = true;
         if (form_up_speed > 0.0) {
-            // 靠拢模式：从节点以 form_up_speed 直线冲向目标，靠近后减速
-            // 减速区 = form_up_speed × 5s，到位阈值 = form_up_speed × 0.4s，跟速度自适应
+            // 靠拢模式：在绝对 ENU 坐标系中冲向目标，主船航向变化不影响从船导航
             double dt = config.sim_step;
-            double slowdown_zone = form_up_speed * 5.0;     // 5秒×速度 = 减速距离
-            double snap_zone     = form_up_speed * 0.4;     // 0.4秒×速度 = 到位圈半径
-            if (slowdown_zone < 30.0) slowdown_zone = 30.0; // 最低 30m
-            if (snap_zone < 2.0)     snap_zone = 2.0;       // 最低 2m
+            double slowdown_zone = form_up_speed * 5.0;
+            double snap_zone     = form_up_speed * 0.4;
+            if (slowdown_zone < 30.0) slowdown_zone = 30.0;
+            if (snap_zone < 2.0)     snap_zone = 2.0;
 
             for (size_t i = 1; i < nodes.size(); ++i) {
                 UUVNode& node = nodes[i];
                 if (node.is_leaving || node.is_joining) continue;
 
-                double dx = node.target_x - node.rel_x;
-                double dy = node.target_y - node.rel_y;
-                double dist = std::hypot(dx, dy);
+                // 绝对目标位置：编队目标点旋转到大地坐标系
+                double tgt_wx = node.target_x * cos(main_hdg_rad) - node.target_y * sin(main_hdg_rad);
+                double tgt_wy = node.target_x * sin(main_hdg_rad) + node.target_y * cos(main_hdg_rad);
+                auto [tgt_lon, tgt_lat] = _enu2geo(tgt_wx, tgt_wy, main_lon, main_lat);
+
+                // 从船当前位置 → ENU
+                auto [cur_enux, cur_enuy] = _geo2enu(node.pos_.lon_deg, node.pos_.lat_deg, main_lon, main_lat);
+                // 目标位置 → ENU
+                auto [tgt_enux, tgt_enuy] = _geo2enu(tgt_lon, tgt_lat, main_lon, main_lat);
+
+                double enu_dx = tgt_enux - cur_enux;
+                double enu_dy = tgt_enuy - cur_enuy;
+                double dist = std::hypot(enu_dx, enu_dy);
 
                 if (dist < snap_zone) {
+                    // 到位：锁定到目标
                     node.rel_x = node.target_x;
                     node.rel_y = node.target_y;
+                    node.speed = main_speed;
+                    // 到位后航向平滑跟随主船，限制每帧变化 ≤ MAX_HEADING_CHANGE
+                    double slave_prev_hdg = node.heading;
+                    if (slave_prev_hdg < 0.0) slave_prev_hdg += 360.0;
+                    double slave_delta = main_heading - slave_prev_hdg;
+                    if (slave_delta > 180.0)  slave_delta -= 360.0;
+                    if (slave_delta < -180.0) slave_delta += 360.0;
+                    const double MAX_SLAVE_HDG_CHANGE = 20.0;
+                    if (slave_delta >  MAX_SLAVE_HDG_CHANGE) slave_delta =  MAX_SLAVE_HDG_CHANGE;
+                    if (slave_delta < -MAX_SLAVE_HDG_CHANGE) slave_delta = -MAX_SLAVE_HDG_CHANGE;
+                    double new_slave_hdg = slave_prev_hdg + slave_delta;
+                    if (new_slave_hdg >= 360.0) new_slave_hdg -= 360.0;
+                    if (new_slave_hdg < 0.0)    new_slave_hdg += 360.0;
+                    node.heading = new_slave_hdg;
                 } else {
                     all_slaves_close = false;
                     double approach_speed = form_up_speed;
@@ -1047,32 +1071,24 @@ namespace seven {
                     }
                     double step = approach_speed * dt;
                     if (step > dist) step = dist;
-                    node.rel_x += (dx / dist) * step;
-                    node.rel_y += (dy / dist) * step;
-                }
-            }
-            // 靠拢模式下从节点速度即为靠拢速度，航向指向目标
-            for (size_t i = 1; i < nodes.size(); ++i) {
-                UUVNode& node = nodes[i];
-                if (node.is_leaving || node.is_joining) continue;
 
-                double dx = node.target_x - node.rel_x;
-                double dy = node.target_y - node.rel_y;
-                double dist = std::hypot(dx, dy);
-                if (dist < snap_zone) {
-                    node.speed = main_speed;
-                    node.heading = main_heading;
-                } else {
-                    double approach_speed = form_up_speed;
-                    if (dist < slowdown_zone) {
-                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / slowdown_zone);
-                        if (approach_speed < main_speed) approach_speed = main_speed;
-                    }
+                    // 在 ENU 中移动
+                    double new_enux = cur_enux + (enu_dx / dist) * step;
+                    double new_enuy = cur_enuy + (enu_dy / dist) * step;
+                    auto [new_lon, new_lat] = _enu2geo(new_enux, new_enuy, main_lon, main_lat);
+                    node.pos_.lon_deg = new_lon;
+                    node.pos_.lat_deg = new_lat;
+
+                    // 反算相对坐标（供后续步骤使用）
+                    auto [new_rx, new_ry] = _geo2enu(new_lon, new_lat, main_lon, main_lat);
+                    double cos_h = std::cos(main_hdg_rad);
+                    double sin_h = std::sin(main_hdg_rad);
+                    node.rel_x =  cos_h * new_rx + sin_h * new_ry;
+                    node.rel_y = -sin_h * new_rx + cos_h * new_ry;
+
+                    // 航速航向：ENU 绝对方向，指向目标
                     node.speed = approach_speed;
-                    // 航向: 指向目标（在 ENU 坐标系中表达，再转回编队坐标系）
-                    double target_enux = dx * cos(main_hdg_rad) - dy * sin(main_hdg_rad);
-                    double target_enuy = dx * sin(main_hdg_rad) + dy * cos(main_hdg_rad);
-                    double hdg = std::atan2(target_enux, target_enuy);
+                    double hdg = std::atan2(enu_dx, enu_dy);
                     hdg = to_degrees(hdg);
                     hdg = fmod(hdg, 360.0);
                     if (hdg < 0) hdg += 360.0;
