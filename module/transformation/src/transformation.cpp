@@ -204,36 +204,46 @@ namespace seven {
         }
 
         // ================================
-        // 【核心修改】最近邻目标分配
-        // 每个节点 → 分配离自己当前位置最近的目标点
+        // 目标分配：Custom 队形用顺序映射，其余用最近邻
         // ================================
         std::vector<std::pair<double, double>> available_targets = target_positions;
 
-        for (UUVNode* node : valid_slaves) {
-            int best_idx = 0;
-            float min_dist = 1e9;
-
-            // 寻找离当前节点最近的目标点
-            for (int i = 0; i < available_targets.size(); ++i) {
-                float tx = available_targets[i].first;
-                float ty = available_targets[i].second;
-
-                float dx = node->rel_x - tx;
-                float dy = node->rel_y - ty;
-                float dist = sqrt(dx * dx + dy * dy);
-
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    best_idx = i;
-                }
+        if (config.trans_formation == Formation_Type::Custom && 
+            static_cast<int>(available_targets.size()) == slave_count)
+        {
+            // Custom 队形节点数匹配 → 按 ID 顺序 1:1 映射
+            // 要求前端保证 custom_formations 中 temp_positions 的顺序与节点 ID 一致
+            for (size_t i = 0; i < valid_slaves.size(); ++i) {
+                valid_slaves[i]->target_x = available_targets[i].first;
+                valid_slaves[i]->target_y = available_targets[i].second;
             }
+        }
+        else
+        {
+            // 非 Custom 队形或节点数不匹配 → 最近邻分配
+            for (UUVNode* node : valid_slaves) {
+                int best_idx = 0;
+                float min_dist = 1e9;
 
-            // 分配最近目标点，并从候选列表移除（避免重复分配）
-            node->target_x = available_targets[best_idx].first;
-            node->target_y = available_targets[best_idx].second;
+                for (int i = 0; i < available_targets.size(); ++i) {
+                    float tx = available_targets[i].first;
+                    float ty = available_targets[i].second;
 
-            // 从可用目标中删除已分配的点
-            available_targets.erase(available_targets.begin() + best_idx);
+                    float dx = node->rel_x - tx;
+                    float dy = node->rel_y - ty;
+                    float dist = sqrt(dx * dx + dy * dy);
+
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        best_idx = i;
+                    }
+                }
+
+                node->target_x = available_targets[best_idx].first;
+                node->target_y = available_targets[best_idx].second;
+
+                available_targets.erase(available_targets.begin() + best_idx);
+            }
         }
 
         // 3. 正在脱离的节点：保持自己的脱离目标
@@ -585,8 +595,8 @@ namespace seven {
                 // ====================== 经纬度更新（和普通节点完全一样） ======================
                 double rx = node.rel_x;
                 double ry = node.rel_y;
-                double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
-                double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+                double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+                double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
                 auto [lon, lat] = _enu2geo(wx, wy, main.pos_.lon_deg, main.pos_.lat_deg);
                 node.pos_.lon_deg = lon;
                 node.pos_.lat_deg = lat;
@@ -599,15 +609,17 @@ namespace seven {
             double ry = node.rel_y;
             double des_vx, des_vy;
 
+            // 先将 body 坐标旋转到 world，再求导得到旋转线速度
+            double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+            double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+
             if (std::fabs(w) < 1e-4) {
                 des_vx = current_v_main * std::sin(main_hdg_rad);
                 des_vy = current_v_main * std::cos(main_hdg_rad);
             }
             else {
-                double v_rel_x = -w * ry;
-                double v_rel_y = w * rx;
-                des_vx = current_v_main * std::sin(main_hdg_rad) + v_rel_x;
-                des_vy = current_v_main * std::cos(main_hdg_rad) + v_rel_y;
+                des_vx = current_v_main * std::sin(main_hdg_rad) + w * wy;
+                des_vy = current_v_main * std::cos(main_hdg_rad) - w * wx;
             }
 
             double desired_speed = std::hypot(des_vx, des_vy);
@@ -619,9 +631,6 @@ namespace seven {
             hdg = fmod(hdg, 360.0);
             if (hdg < 0) hdg += 360.0;
             node.heading = hdg;
-
-            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
-            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
             auto [lon, lat] = _enu2geo(wx, wy, main.pos_.lon_deg, main.pos_.lat_deg);
             node.pos_.lon_deg = lon;
             node.pos_.lat_deg = lat;
@@ -965,8 +974,8 @@ namespace seven {
                     auto [enux, enuy] = _geo2enu(slave_lon, slave_lat, main_lon, main_lat);
                     double cos_h = std::cos(main_hdg_rad);
                     double sin_h = std::sin(main_hdg_rad);
-                    nodes[i].rel_x =  cos_h * enux + sin_h * enuy;
-                    nodes[i].rel_y = -sin_h * enux + cos_h * enuy;
+                    nodes[i].rel_x =  cos_h * enux - sin_h * enuy;
+                    nodes[i].rel_y =  sin_h * enux + cos_h * enuy;
                     break;
                 }
             }
@@ -1000,8 +1009,8 @@ namespace seven {
             }
             // 更新脱离节点经纬度
             double rx = node.rel_x, ry = node.rel_y;
-            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
-            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+            double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+            double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
             auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
             node.pos_.lon_deg = lon;
             node.pos_.lat_deg = lat;
@@ -1046,8 +1055,8 @@ namespace seven {
                 if (node.is_leaving || node.is_joining) continue;
 
                 // 绝对目标位置：用滤波后航向旋转到大地坐标系
-                double tgt_wx = node.target_x * cos(form_hdg_rad) - node.target_y * sin(form_hdg_rad);
-                double tgt_wy = node.target_x * sin(form_hdg_rad) + node.target_y * cos(form_hdg_rad);
+                double tgt_wx = node.target_x * cos(form_hdg_rad) + node.target_y * sin(form_hdg_rad);
+                double tgt_wy = -node.target_x * sin(form_hdg_rad) + node.target_y * cos(form_hdg_rad);
                 auto [tgt_lon, tgt_lat] = _enu2geo(tgt_wx, tgt_wy, main_lon, main_lat);
 
                 // 从船当前位置 → ENU
@@ -1098,8 +1107,8 @@ namespace seven {
                     auto [new_rx, new_ry] = _geo2enu(new_lon, new_lat, main_lon, main_lat);
                     double cos_h = std::cos(main_hdg_rad);
                     double sin_h = std::sin(main_hdg_rad);
-                    node.rel_x =  cos_h * new_rx + sin_h * new_ry;
-                    node.rel_y = -sin_h * new_rx + cos_h * new_ry;
+                    node.rel_x =  cos_h * new_rx - sin_h * new_ry;
+                    node.rel_y =  sin_h * new_rx + cos_h * new_ry;
 
                     // 航速航向：ENU 绝对方向，指向目标
                     node.speed = approach_speed;
@@ -1124,15 +1133,17 @@ namespace seven {
                 if (node.is_leaving || node.is_joining) continue;
 
                 double rx = node.rel_x, ry = node.rel_y;
+                // 先将 body 坐标旋转到 world，再求导得到旋转线速度
+                double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+                double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+
                 double des_vx, des_vy;
                 if (std::fabs(w) < 1e-4) {
                     des_vx = main_speed * std::sin(main_hdg_rad);
                     des_vy = main_speed * std::cos(main_hdg_rad);
                 } else {
-                    double v_rel_x = -w * ry;
-                    double v_rel_y = w * rx;
-                    des_vx = main_speed * std::sin(main_hdg_rad) + v_rel_x;
-                    des_vy = main_speed * std::cos(main_hdg_rad) + v_rel_y;
+                    des_vx = main_speed * std::sin(main_hdg_rad) + w * wy;
+                    des_vy = main_speed * std::cos(main_hdg_rad) - w * wx;
                 }
                 double desired_speed = std::hypot(des_vx, des_vy);
                 desired_speed = std::min(desired_speed, MAX_SPEED);
@@ -1151,8 +1162,8 @@ namespace seven {
             UUVNode& node = nodes[i];
             if (node.is_leaving || node.is_joining) continue;
             double rx = node.rel_x, ry = node.rel_y;
-            double wx = rx * cos(main_hdg_rad) - ry * sin(main_hdg_rad);
-            double wy = rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+            double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+            double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
             auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
             node.pos_.lon_deg = lon;
             node.pos_.lat_deg = lat;
@@ -1316,8 +1327,8 @@ namespace seven {
                 double hdg_rad = sim->get_main_heading_rad();
                 double cos_h = std::cos(hdg_rad);
                 double sin_h = std::sin(hdg_rad);
-                double delta_rel_x =  cos_h * delta_x + sin_h * delta_y;
-                double delta_rel_y = -sin_h * delta_x + cos_h * delta_y;
+                double delta_rel_x =  cos_h * delta_x - sin_h * delta_y;
+                double delta_rel_y =  sin_h * delta_x + cos_h * delta_y;
                 sim->apply_follower_offset(idx, delta_rel_x, delta_rel_y);
             }
             modified_sims.insert(sim);
