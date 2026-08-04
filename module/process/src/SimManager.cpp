@@ -1,4 +1,5 @@
 ﻿#include "process/SimManager.hpp"
+#include "process/process.hpp"
 #include "transformation/transformation.hpp"
 #include "barrage/barrage.hpp"
 #include "deception/deception.hpp"
@@ -108,18 +109,27 @@ namespace seven {
         if (type == Cmd_Type::Transformation)
         {
             // ====================== 实时单帧模式 ======================
-            // 客户端驱动时序：一发一算一返，不走线程池
+            // 提交到线程池，结果通过 s2c 管道异步发送，c2s 立即返回 ack
             if (input.get("realtime", false).asBool()) {
-                Json::Value realtime_output;
-                Transformation_Realtime(input, realtime_output);
+                if (calc_thread_ptr == nullptr) {
+                    result["status"] = "error";
+                    result["message"] = "calc thread not initialized";
+                    return -1;
+                }
+                auto task_param = std::make_shared<CalcTaskParam>();
+                task_param->hPipe = hPipe;           // s2c 管道句柄
+                task_param->input = input;
+                task_param->is_realtime = true;
+                task_param->task_finished = false;
+
+                bool ret = calc_thread_ptr->SubmitRealtimeTask(task_param);
+                if (!ret) {
+                    result["status"] = "error";
+                    result["message"] = "realtime task submit failed, thread busy";
+                    return -1;
+                }
                 result["status"] = "success";
-                result["message"] = "realtime frame processed";
-                if (realtime_output.isMember("formations")) {
-                    result["formations"] = realtime_output["formations"];
-                }
-                if (realtime_output.isMember("cross_formation_avoidance")) {
-                    result["cross_formation_avoidance"] = realtime_output["cross_formation_avoidance"];
-                }
+                result["message"] = "realtime task submitted";
                 return 0;
             }
 

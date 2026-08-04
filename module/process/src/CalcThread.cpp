@@ -240,6 +240,31 @@ namespace seven
 		return false;
 	}
 
+	bool CalcProcessThread::SubmitRealtimeTask(std::shared_ptr<CalcTaskParam> task_param) {
+		if (!pMem_->bStartWork_.load(std::memory_order_acquire)) {
+			return false;
+		}
+
+		int idle_thread = -1;
+		for (int i = 0; i < pMem_->iThreadNum_; ++i) {
+			if (pMem_->ThdStats_[i].GetValue() == static_cast<int>(Pimple::ThreadStatus::DORMANT)) {
+				idle_thread = i;
+				break;
+			}
+		}
+
+		if (idle_thread == -1) {
+			return false;
+		}
+
+		{
+			std::lock_guard<std::mutex> lk(g_task_mutex);
+			g_task_queue.push_back(task_param);
+		}
+
+		return WakeUpAThread(idle_thread);
+	}
+
 	bool CalcProcessThread::WakeUpAThread(int noThread)
 	{
 		if (!pMem_->bStartWork_.load(std::memory_order_acquire))
@@ -366,6 +391,26 @@ namespace seven
 				TempParam.serveral_plat = task_param->serveral_plat;
 
 				if (task_param) {
+					// ===== 实时单帧模式 =====
+					if (task_param->is_realtime) {
+						Json::Value realtime_output;
+						Transformation_Realtime(task_param->input, realtime_output);
+						Json::Value result;
+						result["status"] = "success";
+						result["message"] = "realtime frame processed";
+						if (realtime_output.isMember("formations")) {
+							result["formations"] = realtime_output["formations"];
+						}
+						if (realtime_output.isMember("cross_formation_avoidance")) {
+							result["cross_formation_avoidance"] = realtime_output["cross_formation_avoidance"];
+						}
+						sendResultData(task_param->hPipe, result);
+						task_param->task_finished = true;
+						g_task_cv.notify_all();
+						pMem_->ThdStats_[noThread].SetValue(static_cast<int>(Pimple::ThreadStatus::DORMANT));
+						continue;
+					}
+
 					CalcParamManager::Ins().GetCalcParam();
 					int cmd_int = task_param->input.get("cmd", 4).asInt();
 					Cmd_Type type = static_cast<Cmd_Type>(cmd_int);

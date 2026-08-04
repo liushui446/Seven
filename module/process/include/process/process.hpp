@@ -17,6 +17,7 @@ namespace seven {
 			std::atomic<int> run_frames;
 			std::atomic<int> return_frames;
 			std::atomic<bool> task_finished{ false };
+			std::atomic<bool> is_realtime{ false };
 			vector<InputPlatParam> serveral_plat;
 		};
 	#else
@@ -28,6 +29,7 @@ namespace seven {
 			std::atomic<int> run_frames;
 			std::atomic<int> return_frames;
 			std::atomic<bool> task_finished{ false };
+			std::atomic<bool> is_realtime{ false };
 			vector<InputPlatParam> serveral_plat;
 		};
 	#endif

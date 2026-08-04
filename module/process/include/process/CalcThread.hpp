@@ -15,7 +15,9 @@
 
 namespace seven
 {
-	class SEVEN_EXPORTS CalcProcessThread
+struct CalcTaskParam;
+
+class SEVEN_EXPORTS CalcProcessThread
 	{
 	public:
 		CalcProcessThread();
@@ -35,6 +37,7 @@ namespace seven
 		bool SetAddNodeTaskParam(int formation_id, vector<UUVNode>& input);
 		bool SetRemoveNodeTaskParam(int formation_id, int num);
 		bool SubmitTask(HANDLE hPipe, const Json::Value& input, Json::Value& output);
+		bool SubmitRealtimeTask(std::shared_ptr<CalcTaskParam> task_param);
 		bool WakeUpAThread(int noThread);
 		bool Interrupted();
 		void ResetInterruptFlag(int noThread);
