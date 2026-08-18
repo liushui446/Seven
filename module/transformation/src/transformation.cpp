@@ -647,6 +647,21 @@ namespace seven {
         }
     }
 
+    // ====================== 航向平滑 ======================
+    double UUVFormationSimulator::_smooth_heading(double prev, double target, double max_change) {
+        if (prev < 0.0) prev += 360.0;
+        if (target < 0.0) target += 360.0;
+        double delta = target - prev;
+        if (delta > 180.0)  delta -= 360.0;
+        if (delta < -180.0) delta += 360.0;
+        if (delta >  max_change) delta =  max_change;
+        if (delta < -max_change) delta = -max_change;
+        double result = prev + delta;
+        if (result >= 360.0) result -= 360.0;
+        if (result < 0.0)    result += 360.0;
+        return result;
+    }
+
     // ====================== 队形保持 ======================
     void UUVFormationSimulator::_formation_keeping() {
         // 将因避碰偏离的节点拉回目标相对位置
@@ -1073,19 +1088,8 @@ namespace seven {
                     node.rel_x = node.target_x;
                     node.rel_y = node.target_y;
                     node.speed = main_speed;
-                    // 到位后航向平滑跟随主船，限制每帧变化 ≤ MAX_HEADING_CHANGE
-                    double slave_prev_hdg = node.heading;
-                    if (slave_prev_hdg < 0.0) slave_prev_hdg += 360.0;
-                    double slave_delta = main_heading - slave_prev_hdg;
-                    if (slave_delta > 180.0)  slave_delta -= 360.0;
-                    if (slave_delta < -180.0) slave_delta += 360.0;
-                    const double MAX_SLAVE_HDG_CHANGE = 20.0;
-                    if (slave_delta >  MAX_SLAVE_HDG_CHANGE) slave_delta =  MAX_SLAVE_HDG_CHANGE;
-                    if (slave_delta < -MAX_SLAVE_HDG_CHANGE) slave_delta = -MAX_SLAVE_HDG_CHANGE;
-                    double new_slave_hdg = slave_prev_hdg + slave_delta;
-                    if (new_slave_hdg >= 360.0) new_slave_hdg -= 360.0;
-                    if (new_slave_hdg < 0.0)    new_slave_hdg += 360.0;
-                    node.heading = new_slave_hdg;
+                    // 到位后航向平滑跟随主船
+                    node.heading = _smooth_heading(node.heading, main_heading, 10.0);
                 } else {
                     all_slaves_close = false;
                     double approach_speed = form_up_speed;
@@ -1110,13 +1114,13 @@ namespace seven {
                     node.rel_x =  cos_h * new_rx - sin_h * new_ry;
                     node.rel_y =  sin_h * new_rx + cos_h * new_ry;
 
-                    // 航速航向：ENU 绝对方向，指向目标
+                    // 航速航向：ENU 绝对方向指向目标，平滑变化避免突然掉头
                     node.speed = approach_speed;
                     double hdg = std::atan2(enu_dx, enu_dy);
                     hdg = to_degrees(hdg);
                     hdg = fmod(hdg, 360.0);
                     if (hdg < 0) hdg += 360.0;
-                    node.heading = hdg;
+                    node.heading = _smooth_heading(node.heading, hdg, 10.0);
                 }
             }
         } else {
@@ -1153,7 +1157,8 @@ namespace seven {
                 hdg = to_degrees(hdg);
                 hdg = fmod(hdg, 360.0);
                 if (hdg < 0) hdg += 360.0;
-                node.heading = hdg;
+                // 航向平滑：主船可大角度跳变，从船每帧最多变 30°，多帧后跟上
+                node.heading = _smooth_heading(node.heading, hdg, 10.0);
             }
         }
 

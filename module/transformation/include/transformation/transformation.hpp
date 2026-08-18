@@ -90,6 +90,7 @@ namespace seven{
         void _update_maneuver();
         void _record_transition_step();
         void _formation_keeping();   // 队形保持：将避碰偏离节点拉回目标位置
+        double _smooth_heading(double prev, double target, double max_change);  // 航向平滑，限制每帧变化量
 
     public:
         // 构造函数
