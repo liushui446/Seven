@@ -76,16 +76,15 @@ namespace seven{
         int max_id;
         std::mutex sim_mutex;
 
-        // form-up 目标锚点平滑状态（客户端主船位置突发跳变时，目标点限速跟进，避免从船航向摆动）
-        double anchor_lon_ = 0.0;                  // 锚点经纬度（限速后的主船位置）
-        double anchor_lat_ = 0.0;
-        double prev_main_lon_ = 0.0;               // 上一帧主船位置（测每帧位移）
-        double prev_main_lat_ = 0.0;
-        double ema_delta_ = 0.0;                   // 每帧位移 EMA → 自适应锚点限速
+        // 首次 form-up 标记：form_hdg 首次对齐主船航向（不再用滞后锚点——
+        // 锚点追赶速度 > 从船追赶能力会把目标点"拖着跑"→ 从船绕圈，130839 实测）
         bool anchor_inited_ = false;
 
         // 客户端外推步长 EMA（从船每帧沿报告航向移动的距离，用于到位区尺寸）
         std::unordered_map<int, double> cli_step_ema_;
+        // 客户端上帧上报位置：测真实步长 |本帧上报-上帧上报|。
+        // 不能用 DLL 输出位置 —— snap 段输出 = 锚点+偏移 ≠ 客户端位置，会污染 EMA 撑大到位区。
+        std::unordered_map<int, std::pair<double, double>> prev_report_pos_;
         // 到位状态（滞回：dist < snap_in 进入，dist > snap_out 才退出追赶）
         std::unordered_map<int, bool> in_snap_;
 

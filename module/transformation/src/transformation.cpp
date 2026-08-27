@@ -974,7 +974,8 @@ namespace seven {
         config.main_node.lon_deg = main_lon;
         config.main_node.lat_deg = main_lat;
         config.init_speed = main_speed;
-        config.init_heading = main_heading;
+        // 注意：不在这里重置 init_heading —— 它被 form-up 分支复用作"上一帧 form_hdg"持久状态
+        //（每帧重置为原始主船航向会让 form_hdg 平滑/限速失效 → 目标点随急转弯瞬移 → 从船绕圈）
         main.rel_x = 0.0;
         main.rel_y = 0.0;
 
@@ -986,12 +987,17 @@ namespace seven {
             double slave_lat = pos.second;
             for (size_t i = 1; i < nodes.size(); ++i) {
                 if (nodes[i].id == slave_id) {
-                    // 测量客户端每帧位移：|本次上报位置 - 上一帧输出位置|
-                    // 限幅排除首帧初始化位置差（客户端初始位置 vs 初始化帧主船位置可差数百米，
-                    // 若计入会把到位区撑到数百米 → 从船被误判"已到位"而从不追赶）
-                    auto [sdx, sdy] = _geo2enu(slave_lon, slave_lat,
-                                               nodes[i].pos_.lon_deg, nodes[i].pos_.lat_deg);
-                    double step = std::min(std::hypot(sdx, sdy), 3.0 * main_speed + 5.0);
+                    // 测量客户端每帧位移：|本帧上报 - 上帧上报|（客户端真实步长）。
+                    // 首帧用主船速度量级兜底（客户端初始位置与主船可差数百米，不能计入）；
+                    // 限幅 3×main_speed+5 排除异常上报跳变。
+                    auto it_pr = prev_report_pos_.find(slave_id);
+                    double step = main_speed;
+                    if (it_pr != prev_report_pos_.end()) {
+                        auto [sdx, sdy] = _geo2enu(slave_lon, slave_lat,
+                                                   it_pr->second.first, it_pr->second.second);
+                        step = std::min(std::hypot(sdx, sdy), 3.0 * main_speed + 5.0);
+                    }
+                    prev_report_pos_[slave_id] = {slave_lon, slave_lat};
                     auto& se = cli_step_ema_[slave_id];
                     if (se <= 0.0) se = step;                    // 首次直接采用
                     else           se = 0.9 * se + 0.1 * step;
@@ -1055,40 +1061,37 @@ namespace seven {
         // ===== 4. 靠拢编队 或 碰撞避免 + 队形保持 =====
         bool all_slaves_close = true;
         if (form_up_speed > 0.0) {
-            // ===== 目标锚点平滑 =====
-            // 客户端主船位置突发跳变(量化上报/高倍率)时，目标点限速跟进，避免从船航向摆动。
-            // 锚点每帧最多移动 anchor_step 米；anchor_step 自适应 = 1.2×每帧位移EMA，
-            // 平滑上报时永不截断(零滞后)，突发跳变时摊平为匀速。
+            // 控制目标直接用主船当前位置（aex=aey=0，不再用滞后锚点）。
+            // 量化跳变方向 = 主船运动方向 ≈ form_hdg ≈ 从船到位航向：跳变 50m 时从船
+            // 本来就在朝同一方向走，无需平滑滞后目标。旧锚点反而有害：
+            // 锚点追赶速度(1.2×EMA≈15m/帧) > 从船追赶能力(12.9m/帧) → 目标点比从船
+            // 跑得快 → 从船追不上被拖开绕圈（130839 实测 s1 被拖 155m 画整圈）。
+            double aex = 0.0, aey = 0.0;
             if (!anchor_inited_) {
-                anchor_lon_ = main_lon;
-                anchor_lat_ = main_lat;
-                prev_main_lon_ = main_lon;
-                prev_main_lat_ = main_lat;
-                ema_delta_ = 0.0;
+                // 首次 form-up：form_hdg 直接对齐主船航向（避免从 0 慢慢爬到实际航向）
+                config.init_heading = main_heading;
                 anchor_inited_ = true;
             }
-            auto [dmx, dmy] = _geo2enu(main_lon, main_lat, prev_main_lon_, prev_main_lat_);
-            double main_delta = std::hypot(dmx, dmy);
-            ema_delta_ = 0.9 * ema_delta_ + 0.1 * main_delta;
-            prev_main_lon_ = main_lon;
-            prev_main_lat_ = main_lat;
-            double anchor_step = std::max(1.2 * ema_delta_, 0.5);
-            // 锚点相对主船 ENU 偏移，向主船收敛限速
-            auto [aex0, aey0] = _geo2enu(anchor_lon_, anchor_lat_, main_lon, main_lat);
-            double a_dist = std::hypot(aex0, aey0);
-            double aex, aey;   // 限速后锚点相对主船的 ENU 偏移
-            if (a_dist > anchor_step) {
-                aex = aex0 * (1.0 - anchor_step / a_dist);
-                aey = aey0 * (1.0 - anchor_step / a_dist);
-            } else {
-                aex = 0.0;
-                aey = 0.0;   // 主船慢速/静止时锚点完全跟随
-            }
-            auto [n_alon, n_alat] = _enu2geo(aex, aey, main_lon, main_lat);
-            anchor_lon_ = n_alon;
-            anchor_lat_ = n_alat;
 
-            // 靠拢阶段航向滤波：平滑目标位置，限 30/frame
+            // 靠拢阶段航向滤波：平滑目标位置。
+            // 自适应旋转限速（"减速等待"）：目标点线速度 = 主船前进 + 旋转切向(最坏同向叠加)
+            // 必须 ≤ 从船追赶能力(form_up_speed×1.05)，否则追赶段从船追不上旋转目标：
+            //   顺风侧(偏移方向与主船前进同向旋转)目标点被"推着走" → 从船被甩开数百米/绕圈。
+            // ω_max = (form_up×1.05 - main_speed) / R_off；主船比从船快时编队无法转向(ω=0)。
+            // 编队级统一限速 → 用最大偏移半径（最保守，保证所有从船跟得上）。
+            double R_off = 0.0;
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                if (nodes[i].is_leaving || nodes[i].is_joining) continue;
+                R_off = std::max(R_off, std::hypot(nodes[i].target_x, nodes[i].target_y));
+            }
+            double max_fh_delta = 30.0;
+            if (R_off > 1.0) {
+                // 追赶余量 1.5m/帧：顺风侧目标点速度恒 ≤ 追赶速度−1.5（不论主船快慢），
+                // 否则零余量边界下追赶相对速度≈0 → 从船尾追画弧/被甩开再绕圈
+                // （130839 实测：s1 顺风侧 13.4≈13.5 追不上 → -411° 绕圈，err 126m）
+                double w_max = (form_up_speed * 1.05 - main_speed - 1.5) / R_off * 180.0 / M_PI;
+                max_fh_delta = std::min(30.0, std::max(w_max, 0.0));
+            }
             double raw_hdg = main_heading;
             if (raw_hdg < 0.0) raw_hdg += 360.0;
             double prev_hdg = config.init_heading;
@@ -1096,8 +1099,8 @@ namespace seven {
             double hdg_delta = raw_hdg - prev_hdg;
             if (hdg_delta > 180.0)  hdg_delta -= 360.0;
             if (hdg_delta < -180.0) hdg_delta += 360.0;
-            if (hdg_delta >  30.0)  hdg_delta =  30.0;
-            if (hdg_delta < -30.0)  hdg_delta = -30.0;
+            if (hdg_delta >  max_fh_delta) hdg_delta =  max_fh_delta;
+            if (hdg_delta < -max_fh_delta) hdg_delta = -max_fh_delta;
             double form_hdg = prev_hdg + hdg_delta;
             if (form_hdg >= 360.0) form_hdg -= 360.0;
             if (form_hdg < 0.0)    form_hdg += 360.0;
@@ -1150,6 +1153,14 @@ namespace seven {
                     all_slaves_close = false;
                     double approach = main_speed + (form_up_speed - main_speed) *
                                       std::min(dist / std::max(form_up_speed * 5.0, 30.0), 1.0);
+                    // 防穿越（"减速等待"）：dist 进入到位区外沿后，速度收敛到目标点速度+1m/帧。
+                    // 否则转弯结束后目标点减速到主船速度，从船仍以 8-12m/帧 冲过目标点 →
+                    // brg 翻转 → 近距离绕圈（130839 实测 s1 转弯后 +309°）。
+                    // 目标点速度 = 主船前进 + 旋转切向（fh 变化率×偏移半径，最坏同向）。
+                    double v_tgt = main_speed + std::fabs(hdg_delta) * M_PI / 180.0 * R_off;
+                    if (dist < snap_out * 2.0) {
+                        approach = std::min(approach, v_tgt + 1.0);
+                    }
                     // 位置输出 = 客户端位置 + 朝目标推进 approach×0.1（显示连续）
                     double move = std::min(approach * 0.1, dist);
                     double nx = cl_x + dx / dist * move;
