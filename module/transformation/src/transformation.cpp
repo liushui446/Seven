@@ -925,6 +925,9 @@ namespace seven {
     {
         std::lock_guard<std::mutex> lock(sim_mutex);
         config = forparams_;
+        anchor_inited_ = false;   // 重置锚点状态，避免复用上次运行的位置
+        cli_step_ema_.clear();    // 重置客户端步长 EMA
+        in_snap_.clear();         // 重置到位状态
     }
 
     void UUVFormationSimulator::apply_follower_offset(size_t node_index, double delta_rel_x, double delta_rel_y)
@@ -983,6 +986,15 @@ namespace seven {
             double slave_lat = pos.second;
             for (size_t i = 1; i < nodes.size(); ++i) {
                 if (nodes[i].id == slave_id) {
+                    // 测量客户端每帧位移：|本次上报位置 - 上一帧输出位置|
+                    // 限幅排除首帧初始化位置差（客户端初始位置 vs 初始化帧主船位置可差数百米，
+                    // 若计入会把到位区撑到数百米 → 从船被误判"已到位"而从不追赶）
+                    auto [sdx, sdy] = _geo2enu(slave_lon, slave_lat,
+                                               nodes[i].pos_.lon_deg, nodes[i].pos_.lat_deg);
+                    double step = std::min(std::hypot(sdx, sdy), 3.0 * main_speed + 5.0);
+                    auto& se = cli_step_ema_[slave_id];
+                    if (se <= 0.0) se = step;                    // 首次直接采用
+                    else           se = 0.9 * se + 0.1 * step;
                     nodes[i].pos_.lon_deg = slave_lon;
                     nodes[i].pos_.lat_deg = slave_lat;
                     // 经纬度 → ENU → 逆旋转得到相对坐标
@@ -1043,11 +1055,38 @@ namespace seven {
         // ===== 4. 靠拢编队 或 碰撞避免 + 队形保持 =====
         bool all_slaves_close = true;
         if (form_up_speed > 0.0) {
-            double dt = config.sim_step;
-            double slowdown_zone = form_up_speed * 5.0;
-            double snap_zone     = form_up_speed * 0.4;
-            if (slowdown_zone < 30.0) slowdown_zone = 30.0;
-            if (snap_zone < 2.0)     snap_zone = 2.0;
+            // ===== 目标锚点平滑 =====
+            // 客户端主船位置突发跳变(量化上报/高倍率)时，目标点限速跟进，避免从船航向摆动。
+            // 锚点每帧最多移动 anchor_step 米；anchor_step 自适应 = 1.2×每帧位移EMA，
+            // 平滑上报时永不截断(零滞后)，突发跳变时摊平为匀速。
+            if (!anchor_inited_) {
+                anchor_lon_ = main_lon;
+                anchor_lat_ = main_lat;
+                prev_main_lon_ = main_lon;
+                prev_main_lat_ = main_lat;
+                ema_delta_ = 0.0;
+                anchor_inited_ = true;
+            }
+            auto [dmx, dmy] = _geo2enu(main_lon, main_lat, prev_main_lon_, prev_main_lat_);
+            double main_delta = std::hypot(dmx, dmy);
+            ema_delta_ = 0.9 * ema_delta_ + 0.1 * main_delta;
+            prev_main_lon_ = main_lon;
+            prev_main_lat_ = main_lat;
+            double anchor_step = std::max(1.2 * ema_delta_, 0.5);
+            // 锚点相对主船 ENU 偏移，向主船收敛限速
+            auto [aex0, aey0] = _geo2enu(anchor_lon_, anchor_lat_, main_lon, main_lat);
+            double a_dist = std::hypot(aex0, aey0);
+            double aex, aey;   // 限速后锚点相对主船的 ENU 偏移
+            if (a_dist > anchor_step) {
+                aex = aex0 * (1.0 - anchor_step / a_dist);
+                aey = aey0 * (1.0 - anchor_step / a_dist);
+            } else {
+                aex = 0.0;
+                aey = 0.0;   // 主船慢速/静止时锚点完全跟随
+            }
+            auto [n_alon, n_alat] = _enu2geo(aex, aey, main_lon, main_lat);
+            anchor_lon_ = n_alon;
+            anchor_lat_ = n_alat;
 
             // 靠拢阶段航向滤波：平滑目标位置，限 30/frame
             double raw_hdg = main_heading;
@@ -1069,58 +1108,63 @@ namespace seven {
                 UUVNode& node = nodes[i];
                 if (node.is_leaving || node.is_joining) continue;
 
-                // 绝对目标位置：用滤波后航向旋转到大地坐标系
-                double tgt_wx = node.target_x * cos(form_hdg_rad) + node.target_y * sin(form_hdg_rad);
-                double tgt_wy = -node.target_x * sin(form_hdg_rad) + node.target_y * cos(form_hdg_rad);
-                auto [tgt_lon, tgt_lat] = _enu2geo(tgt_wx, tgt_wy, main_lon, main_lat);
+                // 绝对目标位置：锚点偏移 + 滤波后航向旋转到大地坐标系
+                double tgt_wx = aex + node.target_x * cos(form_hdg_rad) + node.target_y * sin(form_hdg_rad);
+                double tgt_wy = aey + -node.target_x * sin(form_hdg_rad) + node.target_y * cos(form_hdg_rad);
 
-                // 从船当前位置 → ENU
-                auto [cur_enux, cur_enuy] = _geo2enu(node.pos_.lon_deg, node.pos_.lat_deg, main_lon, main_lat);
-                // 目标位置 → ENU
-                auto [tgt_enux, tgt_enuy] = _geo2enu(tgt_lon, tgt_lat, main_lon, main_lat);
+                // 客户端当前位置（step 2 已覆盖为上报位置）→ 距目标距离
+                auto [cl_x, cl_y] = _geo2enu(node.pos_.lon_deg, node.pos_.lat_deg, main_lon, main_lat);
+                double dx = tgt_wx - cl_x;
+                double dy = tgt_wy - cl_y;
+                double dist = std::hypot(dx, dy);
 
-                double enu_dx = tgt_enux - cur_enux;
-                double enu_dy = tgt_enuy - cur_enuy;
-                double dist = std::hypot(enu_dx, enu_dy);
+                // 到位区尺寸：覆盖客户端步长残差 + 追赶段尾部（实测步长 EMA，见 step 2）
+                double step_est = main_speed;
+                auto it_se = cli_step_ema_.find(node.id);
+                if (it_se != cli_step_ema_.end() && it_se->second > 1.0) {
+                    step_est = it_se->second;
+                }
+                double snap_in  = std::max({form_up_speed * 0.4, 2.0 * step_est, 2.0});
+                double snap_out = 1.5 * snap_in;          // 滞回：进入后 dist 超此值才重新追赶
 
-                if (dist < snap_zone) {
-                    // 到位：锁定到目标
+                bool& in_snap = in_snap_[node.id];
+                if (in_snap) {
+                    if (dist > snap_out) in_snap = false;
+                } else if (dist < snap_in) {
+                    in_snap = true;
+                }
+
+                if (in_snap) {
+                    // ===== 到位：航向/速度是唯一控制量（客户端从自身位置沿报告航向移动）=====
+                    // speed = main×min(1, dist/snap_in) 是自然收敛的 P 控制器：
+                    //   - dist→0（如到位瞬间航向与编队航向差 180°）→ 速度→0 → 原地转，不冲走；
+                    //   - 转好后 dist 增大 → 速度 > 主船 → 追上 → 平衡在 snap_in 附近（≤~20m 误差）
+                    // 航向 4°/帧对齐编队航向（不再指方位——dist≈0 时方位无意义/噪声大）
+                    // 位置保持客户端上报值（连续，不瞬移——客户端不用输出位置做外推）
                     node.rel_x = node.target_x;
                     node.rel_y = node.target_y;
-                    node.speed = main_speed;
-                    // 到位后航向平滑跟随主船
-                    node.heading = _smooth_heading(node.heading, main_heading, 10.0);
+                    node.speed = main_speed * std::min(1.0, dist / snap_in);
+                    node.heading = _smooth_heading(node.heading, form_hdg, 4.0);
                 } else {
+                    // ===== 追赶：编队形成过程（从船可见地加速、朝目标方位转向靠拢）=====
                     all_slaves_close = false;
-                    double approach_speed = form_up_speed;
-                    if (dist < slowdown_zone) {
-                        approach_speed = main_speed + (form_up_speed - main_speed) * (dist / slowdown_zone);
-                        if (approach_speed < main_speed) approach_speed = main_speed;
-                    }
-                    double step = approach_speed * dt;
-                    if (step > dist) step = dist;
-
-                    // 在 ENU 中移动
-                    double new_enux = cur_enux + (enu_dx / dist) * step;
-                    double new_enuy = cur_enuy + (enu_dy / dist) * step;
-                    auto [new_lon, new_lat] = _enu2geo(new_enux, new_enuy, main_lon, main_lat);
-                    node.pos_.lon_deg = new_lon;
-                    node.pos_.lat_deg = new_lat;
-
-                    // 反算相对坐标（供后续步骤使用）
-                    auto [new_rx, new_ry] = _geo2enu(new_lon, new_lat, main_lon, main_lat);
-                    double cos_h = std::cos(main_hdg_rad);
-                    double sin_h = std::sin(main_hdg_rad);
-                    node.rel_x =  cos_h * new_rx - sin_h * new_ry;
-                    node.rel_y =  sin_h * new_rx + cos_h * new_ry;
-
-                    // 航速航向：ENU 绝对方向指向目标，平滑变化避免突然掉头
-                    node.speed = approach_speed;
-                    double hdg = std::atan2(enu_dx, enu_dy);
-                    hdg = to_degrees(hdg);
-                    hdg = fmod(hdg, 360.0);
-                    if (hdg < 0) hdg += 360.0;
-                    node.heading = _smooth_heading(node.heading, hdg, 10.0);
+                    double approach = main_speed + (form_up_speed - main_speed) *
+                                      std::min(dist / std::max(form_up_speed * 5.0, 30.0), 1.0);
+                    // 位置输出 = 客户端位置 + 朝目标推进 approach×0.1（显示连续）
+                    double move = std::min(approach * 0.1, dist);
+                    double nx = cl_x + dx / dist * move;
+                    double ny = cl_y + dy / dist * move;
+                    auto [n_lon, n_lat] = _enu2geo(nx, ny, main_lon, main_lat);
+                    node.pos_.lon_deg = n_lon;
+                    node.pos_.lat_deg = n_lat;
+                    node.speed = approach;
+                    double brg = std::atan2(dx, dy);
+                    brg = to_degrees(brg);
+                    brg = fmod(brg, 360.0);
+                    if (brg < 0) brg += 360.0;
+                    // 追赶段转向速率 20°/帧：15/20°/帧实测最优（更快对准 → 绕行更小、
+                    // 形成更快、摆动更低）；6-8°/帧转向滞后导致从船绕大圈、形成慢
+                    node.heading = _smooth_heading(node.heading, brg, 20.0);
                 }
             }
         } else {
@@ -1162,16 +1206,18 @@ namespace seven {
             }
         }
 
-        // 更新所有从节点绝对经纬度
-        for (size_t i = 1; i < nodes.size(); ++i) {
-            UUVNode& node = nodes[i];
-            if (node.is_leaving || node.is_joining) continue;
-            double rx = node.rel_x, ry = node.rel_y;
-            double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
-            double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
-            auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
-            node.pos_.lon_deg = lon;
-            node.pos_.lat_deg = lat;
+        // 更新所有从节点绝对经纬度（form-up 模式下从节点位置已在分支内确定，不再用 rel 覆盖）
+        if (form_up_speed <= 0.0) {
+            for (size_t i = 1; i < nodes.size(); ++i) {
+                UUVNode& node = nodes[i];
+                if (node.is_leaving || node.is_joining) continue;
+                double rx = node.rel_x, ry = node.rel_y;
+                double wx = rx * cos(main_hdg_rad) + ry * sin(main_hdg_rad);
+                double wy = -rx * sin(main_hdg_rad) + ry * cos(main_hdg_rad);
+                auto [lon, lat] = _enu2geo(wx, wy, main_lon, main_lat);
+                node.pos_.lon_deg = lon;
+                node.pos_.lat_deg = lat;
+            }
         }
 
         // ===== 6. 过渡完成检测 =====
